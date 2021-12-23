@@ -1,0 +1,174 @@
+***********************************************************************
+* DESCRIPTION:                                                        *
+* ________________________________________________________________    *
+* GET FIRST RECORD FROM FIFO QUEUE._______________________________    *
+* THTGET00 RETURNS THE FIRST VALUE OF A TABLE AND DELETES IT______    *
+* SETS @VALUE AND VALUEL.                                             *
+* THE CALLER IS RESPONSIBLE FOR RELEASING THE STORAGE AFTER THEY ARE  *
+* DONE WITH IT.                                                       *
+* ________________________________________________________________    *
+* ________________________________________________________________    *
+* ________________________________________________________________    *
+* Entry:___R1: @THTCOMM___________________________________________    *
+* ________________________________________________________________    *
+* Return:__R15: RC________________________________________________    *
+* _________R1:  @THTCOMM__________________________________________    *
+***********************************************************************
+           TITLE    'THTGET00 GET RECORD FROM FIFO TABLE'
+           SYSSTATE ARCHLVL=2
+THTGET00   RSECT    ,                              REANTRANT
+THTGET00   AMODE    31
+THTGET00   RMODE    ANY
+*********************************************************************** 
+* REGISTER                                                              
+*********************************************************************** 
+R0         EQU      0
+R1         EQU      1                              @THTCOMM             
+R2         EQU      2                              @TBCB                
+R3         EQU      3                              @BUCKET              
+R4         EQU      4                              BUCKET INDEX         
+R5         EQU      5                              BUCKET OFFSET        
+R6         EQU      6                                                   
+R7         EQU      7                                                   
+R8         EQU      8                                                   
+R9         EQU      9                                                   
+R10        EQU      10                             @HTCB
+R11        EQU      11                             @WORKAREA            
+R12        EQU      12                             @THTGET00            
+R13        EQU      13                                                  
+R14        EQU      14                             @BEGIN BUCKETAREA    
+R15        EQU      15                             @END BUCKET AREA     
+*********************************************************************** 
+* ENTRY                                                                 
+*********************************************************************** 
+           BAKR     R14,0                          SAVE CALLER REGS
+           LR       R12,R15                  R12:  @THTGET00
+           USING    THTGET00,R12                   ADDRESS THTGET00
+***********************************************************************
+* MAIN
+***********************************************************************
+           USING    THTCOMM,R1                     ADDRESS THTCOMM
+           L        R2,@MAPAREA              R2:   @HTCB
+*----------------------------------------------------------------------
+*          TEST IF HTCB EXISITS
+*----------------------------------------------------------------------
+           LR       R10,R2                   R10:  @HTCB
+           USING    THTHTCB,R10                    ADDRESS HTCB
+           IILF     R15,THTEYE               R15:  'HTCB' EYE CATCHER
+           L        R14,0(,R2)               R14:  EYE CATCHER
+           CRJNE    R15,R14,ERROR01                IF NO HTCB, ERROR
+*----------------------------------------------------------------------
+*          TEST IF TABLE EXISTS
+*----------------------------------------------------------------------
+           LA       R2,THTHTCBL(,R2)         R2:   @VECTOR OF TBCB's
+           USING    THTTBCB,R2                     ADDRESS TBCB
+           ICM      R9,B'1111',THTTBLC       R9:   NUMBER OF TABLES
+           JZ       ERROR02                        IF NO TBCB's, ERROR
+*----------------------------------------------------------------------
+*          SEARCH ALL TBCB FOR OUR TABLE
+*----------------------------------------------------------------------
+           LLC      R4,TBLNAMEL              R4:   LENGTH TABLE NAME
+           IILF     R0,THTEYE2               R0:   'TBCB' EYE CATCHER
+           L        R15,@TBLNAME             R15:  @TABLE NAME
+SRCHTABLE  L        R14,0(,R2)               R14:  TBCB EYE CATCHER
+           CRJNE    R0,R14,NEXTSLOT                IF NO TBCB,NEXT SLOT
+           LLC      R5,THTTNAML              R5:   TBLNAME LEN OF TBCB
+           CRJNE    R5,R4,NEXTTBCB                 IF NOT SAME LEN,NEXT
+           AHI      R5,-1                    R5:   DECR. LENGTH FOR CLC
+           EX       R5,TBLCLC                      FOUND OUR TBCB ?
+           JE       SELECT                         YES, CONTINUE
+NEXTTBCB   LA       R2,THTTBCBL(,R2)               NO, NEXT TBCB
+           JCT      R9,SRCHTABLE                   CONTINUE WHILE TBCBs
+           J        ERROR03                        TABLE NOT FOUND
+NEXTSLOT   LA       R2,THTTBCBL(,R2)         R2:   @NEXT TBCB
+           J        SRCHTABLE
+*----------------------------------------------------------------------
+*          SELECT KEY + VALUE FROM BUCKET
+*----------------------------------------------------------------------
+SELECT     DS       0H
+           ICM      R3,B'1111',THTFBUCK      R3:   RBA 1. BUCK IN TBL
+           JZ       ERROR04                        IF TBL IS EMPTY
+           LA       R3,0(R3,R10)             R3:   @FIRST_BUCKET
+           USING    THTBUCK,R3                     ADDRESS BUCKET
+           LLC      R9,THTKEYL               R9:   KEY LENGTH
+           STC      R9,KEYL                        SET IN THTCOMM
+           L        R7,THTVALL               R7:   LENGTH VALUE
+           ST       R7,VALUEL                      SET IN THTCOMM
+           LA       R8,THTBUCKL(,R3)         R8:   @KEY/VALUE FIELD
+           ST       R8,@KEY                        SET @KEY IN THTCOMM
+           LA       R6,0(R9,R8)              R6:   @VALUE FIELD
+           DROP     R1                             DROP THTCOMM
+           LR       R4,R1                    R4:   @THTCOMM
+           USING    THTCOMM,R4                     ADDRESS THTCOMM
+*----------------------------------------------------------------------
+*          COPY VALUE INTO
+*----------------------------------------------------------------------
+           IILF     R2,#ARRAYELL+#ARRAYL     R2:   LENGTH ARRAY+1 ELEM
+           ALR      R2,R7                    R2.   YES, +LENGTH VALUE
+           STORAGE  OBTAIN,LOC=(31,31),LENGTH=(R2),BNDRY=DBLWD
+           ST       R1,@THTRETURN                  SET PTR IN THTCOMM
+           LR       R2,R1                    R2:   @ARRAY
+           USING    #ARRAY,R2                      ADDRESS ARRAY
+           ST       R0,#ARRAYSIZ                   SET SIZE ARRAY
+           IILF     R0,1                     R0:   ONE ELEMENT IN ARRAY
+           ST       R0,#ARRAYELMM                  SET NUMBER ELEMENTS
+           ST       R0,#ARRAYELM                   SET NUMBER ELEMENTS
+           LA       R0,#ARRAYL+#ARRAYELL(,R2) R0:  @AFTER ARRAY
+           LA       R2,#ARRAYL(,R2)          R2:   @INDEX 0
+           USING    #ARRAYEL,R2                    ADDRESS ELEMENT 0
+           LR       R1,R7                    R1:   LENGTH VALUE
+           ST       R0,#ARRAYELM@                  SET PTR TO VALUE
+           ST       R0,@VALUE                      SET IN THTCOMM
+           ST       R1,#ARRAYELML                  SET LENGTH VALUE
+           MVCL     R0,R6                          MV VALUE AFTER ARRAY
+           L        R15,@THTDELET_           R15:  @DELETE ROUTINE
+           LR       R1,R4
+           BALR     R14,R15                        DELETE KEY FROM TBL
+***********************************************************************
+* RETURN
+***********************************************************************
+EXIT01     DS       0H
+           PR       ,
+***********************************************************************
+* ERRORS
+***********************************************************************
+*----------------------------------------------------------------------
+*          NO HTCB FOUND, HASHTABLE MUST BE  INIT
+*----------------------------------------------------------------------
+ERROR01    DS       0H
+           IILF     R15,#NO_HTCB
+           J        EXIT01
+*----------------------------------------------------------------------
+*          NO TABLES FOUND
+*----------------------------------------------------------------------
+ERROR02    DS       0H
+           IILF     R15,#NO_TABLES
+           J        EXIT01
+*----------------------------------------------------------------------
+*          TABLE NOT FOUND
+*----------------------------------------------------------------------
+ERROR03    DS       0H
+           IILF     R15,#TABLE_NOT_FOUND
+           J        EXIT01
+*----------------------------------------------------------------------
+*          TABLE IS EMPTY
+*----------------------------------------------------------------------
+ERROR04    DS       0H
+           IILF     R15,#TABLE_IS_EMPTY
+           J        EXIT01
+***********************************************************************
+* CONSTANTS
+***********************************************************************
+           DS       0F
+@THTDELET_ DC       V(THTDELET)
+           USING    THTTBCB,R2                     ADDRESS TBCB
+TBLCLC     CLC      THTTNAME(0),0(R15)
+           DROP     R2
+           LTORG
+***********************************************************************
+* DSECTS
+***********************************************************************
+           THTCOMM  ,                              THT COMMAREA
+           THTCBLKS ,                              THT CONTROL BLOCKS
+           DATATYPE ,                              DATATYPES MAPPING
+           END      THTGET00

@@ -1,0 +1,140 @@
+***********************************************************************
+* DESCRIPTION                                                         *
+* ___________________________________________________________________ *
+* CREATES A HASHTABLE CONTOL BLOCK (HTCB)____________________________ *
+* IN THTCOMM:________________________________________________________ *
+* BUCCOUNT - MAX NUMBER OF BUCKETS___________________________________ *
+* BUCSIZE  - SIZE OF EACH BUCKET_____________________________________ *
+* TBLNUM   - MAX NUMBER OF TABLES____________________________________ *
+* MUST BE SET BY THE CALLING PROGRAM_________________________________ *
+* ___________________________________________________________________ *
+* ENTRY: R1: @THTCOMM________________________________________________ *
+* ___________________________________________________________________ *
+* RETURN:R15:RC______________________________________________________ *
+* ___________________________________________________________________ *
+***********************************************************************
+           TITLE    'THTINIT0 CREATE HASH TABLE CONTROL BLOCK'
+           SYSSTATE ARCHLVL=2
+THTINIT0   CSECT    ,
+THTINIT0   AMODE    31
+THTINIT0   RMODE    ANY
+***********************************************************************
+* REGISTER
+***********************************************************************
+R0         EQU      0
+R1         EQU      1
+R2         EQU      2
+R3         EQU      3
+R4         EQU      4
+R5         EQU      5
+R6         EQU      6
+R7         EQU      7
+R8         EQU      8
+R9         EQU      9
+R10        EQU      10                             @THTCOMM
+R11        EQU      11                             @WORKAREA
+R12        EQU      12                             @THTINIT0
+R13        EQU      13                             LINKAGE
+R14        EQU      14                             LINKAGE
+R15        EQU      15                             LINKAGE
+***********************************************************************
+* ENTRY
+***********************************************************************
+           BAKR     R14,0                          SAVE CALLER REGS
+           LR       R12,R15                  R12:  @THTINIT0
+           USING    THTINIT0,R12                   ADDRESS THTINIT0
+           LR       R10,R1                   R10:  @THTCOMM
+***********************************************************************
+* MAIN
+***********************************************************************
+*----------------------------------------------------------------------
+*          TEST IF WE ALREADY HAVE AN HTCB
+*----------------------------------------------------------------------
+           USING    THTCOMM,R10                    ADDRESS THTCOMM
+           L        R2,@MAPAREA              R2:   PTR DIV MAP HASHTBL
+           USING    THTHTCB,R2                     ADDRESS HASHTABLE
+           IILF     R15,THTEYE               R15:  'HTCB' EYE CATCHER
+           L        R14,0(,R2)               R14:  EYE CATCHER
+           CRJE     R15,R14,ERROR01                IF HTCB, ERROR
+*----------------------------------------------------------------------
+*          CALCULATE SIZE OF THE BUCKET AREA
+*----------------------------------------------------------------------
+           L        R6,BUCCOUNT              R6:   NUMBER OF BUCKETS
+           ST       R6,THTBUCKC                    SET NUMBER BUCKETS
+           L        R5,BUCSIZE               R5:   SIZE OF ONE BUCKET
+           ST       R5,THTBSIZE                    SET BUCKET SIZE
+           SR       R8,R8                    R8:   ZERO
+           LR       R9,R5                    R9:   SIZE OF ONE BUCLET
+           MLR      R8,R6                    R9:   SIZE BUCKET AREA
+           CIJH     R8,0,ERROR02                   SIZE TO LARGE
+*----------------------------------------------------------------------
+*          SET EYE CATCHER
+*----------------------------------------------------------------------
+           IILF     R1,THTEYE                R1:   HTCB EYE CATCHER
+           ST       R1,THTHBEC                     SET EYE CATCHER
+*----------------------------------------------------------------------
+*          SET SIZE OF VALUE FIELD IN BUCKET
+*----------------------------------------------------------------------
+           IILF     R4,THTBUCKL              R4:   LENGTH BUCKET HEADER
+           SLR      R5,R4                    R3:   SIZE VALUE FIELD
+           ST       R5,THTVSIZE                    SET SIZE VALUE FIELD
+*----------------------------------------------------------------------
+*          SET COUNT BUCKETS
+*----------------------------------------------------------------------
+           MVC      THTBUCKF,BUCCOUNT              SET FREE BUCKETS
+*----------------------------------------------------------------------
+*          INIT USED BUCKETS,NUMBER TABLES,NUMBER COLLISIONS
+*----------------------------------------------------------------------
+           XC       THTTBLC,THTTBLC                SET NUM TABLES
+           XC       THTCOLLS,THTCOLLS              SET NUM COLLISIONS
+           XC       THTBUCKU,THTBUCKU              SET BUCKETS IN USE=0
+*----------------------------------------------------------------------
+*          SET NUMBER OF TBCB
+*----------------------------------------------------------------------
+           L        R5,TBLNUM                R5:   NUMBER OF TABLES
+           ST       R5,THTTBLNUM                   SET NUMBER OF TABLES
+*----------------------------------------------------------------------
+*          CALCULATE RBA OF FIRST BUCKET
+*----------------------------------------------------------------------
+           MHI      R5,THTTBCBL              R5:   SIZE TBCB AREA
+           AHI      R5,THTHTCBL              R5:   +SIZE HTCB
+           ST       R5,@THTBUCK                    SET RBA OF 1. BUCKET
+*----------------------------------------------------------------------
+*          CALCULATE RBA OF LAST BUCKET
+*----------------------------------------------------------------------
+           ALR      R5,R9                    R5:   + SIZE BUCKET AREA
+           ST       R5,THTSIZE                     SET SIZE HASHTABLE
+           S        R5,BUCSIZE                     - LENGTH LAST BUCKET
+           ST       R5,@THTBUCKE                   SET RBA LAST BUCKET
+           SR       R15,R15                  R15:  RC=0
+***********************************************************************
+* RETURN
+***********************************************************************
+EXIT01     DS       0H
+           LR       R1,R10                   R1:   @THTCOMM
+           PR       ,
+***********************************************************************
+* ERRORS
+***********************************************************************
+*----------------------------------------------------------------------
+*          HTCB EXISTS ALREADY
+*----------------------------------------------------------------------
+ERROR01    DS       0H
+           IILF     R15,#HTCB_EXISTS         R15:  RC
+           J        EXIT01                         EXIT
+*----------------------------------------------------------------------
+*          BUCKET AREA SIZE TO LARGE
+*----------------------------------------------------------------------
+ERROR02    DS       0H
+           IILF     R15,#SIZE_TO_LARGE       R15:  RC
+           J        EXIT01                         EXIT
+***********************************************************************
+* CONSTANTS
+***********************************************************************
+           LTORG
+***********************************************************************
+* DSECTS
+***********************************************************************
+           THTCOMM
+           THTCBLKS
+           END

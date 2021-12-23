@@ -1,0 +1,335 @@
+***********************************************************************
+* Description:                                                        *
+* ________________________________________________________________    *
+* Insert a key/value pair into a hashtable._______________________    *
+* If the Key already exists in the Table it will be updated with _    *
+* the new Value.__________________________________________________    *
+* ________________________________________________________________    *
+* ________________________________________________________________    *
+* Entry:___R1: @THTCOMM___________________________________________    *
+* ________________________________________________________________    *
+* Return:__R15: RC________________________________________________    *
+* _________R1:__@THTCOMM__________________________________________    *
+***********************************************************************
+           TITLE    'THTMERG0 MERGE RECORD INTO HASHTABLE'
+           SYSSTATE ARCHLVL=2
+THTMERG0   RSECT    ,                              REANTRANT
+THTMERG0   AMODE    31
+THTMERG0   RMODE    ANY
+*********************************************************************** 
+* REGISTER                                                              
+*********************************************************************** 
+R0         EQU      0
+R1         EQU      1                              @THTCOMM             
+R2         EQU      2                              @TBCB                
+R3         EQU      3                              @BUCKET              
+R4         EQU      4                              BUCKET INDEX         
+R5         EQU      5                              BUCKET OFFSET        
+R6         EQU      6                                                   
+R7         EQU      7                                                   
+R8         EQU      8                                                   
+R9         EQU      9                                                   
+R10        EQU      10                             @HTCB
+R11        EQU      11                             COLLISION FLAG       
+R12        EQU      12                             @THTMERG0            
+R13        EQU      13                             @FIRST BUCKET        
+R14        EQU      14                             @BEGIN BUCKETAREA    
+R15        EQU      15                             @END BUCKET AREA     
+*********************************************************************** 
+* ENTRY                                                                 
+*********************************************************************** 
+           BAKR     R14,0                          SAVE CALLER REGS
+           LR       R12,R15                  R12:  @THTMERG0
+           USING    THTMERG0,R12                   ADDRESS THTMERG0
+***********************************************************************
+* MAIN
+***********************************************************************
+           USING    THTCOMM,R1                     ADDRESS THTCOMM
+           L        R2,@MAPAREA              R2:   @HTCB
+*----------------------------------------------------------------------
+*          TEST IF HTCB EXISITS
+*----------------------------------------------------------------------
+           LR       R10,R2                   R10:  @HTCB
+           USING    THTHTCB,R10                    ADDRESS HTCB
+           IILF     R15,THTEYE               R15:  'HTCB' EYE CATCHER
+           L        R14,0(,R2)               R14:  EYE CATCHER
+           CRJNE    R15,R14,ERROR01                IF NO HTCB, ERROR
+*----------------------------------------------------------------------
+*          TEST IF WE HAVE A FREE BUCKET
+*----------------------------------------------------------------------
+           L        R6,THTBUCKF              R6:   NUMBER FREE BUCKETS
+           CIJE     R6,0,ERROR05                   IF 0 THEN ERROR
+*----------------------------------------------------------------------
+*          TEST IF TABLE EXISTS
+*----------------------------------------------------------------------
+           LA       R2,THTHTCBL(,R2)         R2:   @VECTOR OF TBCB's
+           USING    THTTBCB,R2                     ADDRESS TBCB
+           ICM      R9,B'1111',THTTBLC       R9:   NUMBER OF TABLES
+           JZ       ERROR02                        IF NO TBCB's, ERROR
+*----------------------------------------------------------------------
+*          SEARCH ALL TBCB FOR OUR TABLE
+*----------------------------------------------------------------------
+           LLC      R4,TBLNAMEL              R4:   LENGTH TABLE NAME
+           IILF     R0,THTEYE2               R0:   'TBCB' EYE CATCHER
+           L        R15,@TBLNAME             R15:  @TABLE NAME
+SRCHTABLE  L        R14,0(,R2)               R14:  TBCB EYE CATCHER
+           CRJNE    R0,R14,NEXTSLOT                IF NO TBCB,NEXT SLOT
+           LLC      R5,THTTNAML              R5:   TBLNAME LEN OF TBCB
+           CRJNE    R5,R4,NEXTTBCB                 IF NOT SAME LEN,NEXT
+           AHI      R5,-1                    R5:   DECR. LENGTH FOR CLC
+           EX       R5,TBLCLC                      FOUND OUR TBCB ?
+           JE       CALCHASH                       YES, CONTINUE
+NEXTTBCB   LA       R2,THTTBCBL(,R2)               NO, NEXT TBCB
+           JCT      R9,SRCHTABLE                   CONTINUE WHILE TBCBs
+           J        ERROR03                        TABLE NOT FOUND
+NEXTSLOT   LA       R2,THTTBCBL(,R2)         R2:   @NEXT TBCB
+           J        SRCHTABLE
+*----------------------------------------------------------------------
+*          CALC HASH AND BUCKET INDEX
+*          WE USE THE HASH OF THE TABLE NAME AS
+*          A SEED FOR THE HASH OF THE KEY
+*          BECAUSE WE DON'T WANT GUARANTEED COLLISONS
+*          ON THE SAME KEYS IN DIFFERENT TABLES
+*
+*          FIRST WE HASH USING A MODIFIED VERSION OF
+*          GOOGLE'S MURMUR3 FUNCTION. IF WE GET A COLLISION
+*          WE REHASH WITH THE DJB2 FUNCTION.
+*          IF WE COLLIDE AGAIN WE USE LINEAR PROBING TO FIND
+*          A FREE BUCKET.
+*----------------------------------------------------------------------
+CALCHASH   DS       0H
+           SR       R11,R11                  R11:  RESET COLLISION FLAG
+           L        R3,THTTHASH              R3:   HASH OF TABLE NAME
+           ST       R3,TBLHASH                     SET IN THTCOMM
+*----------------------------------------------------------------------
+*          MURMUR3 HASH FUNCTION
+*----------------------------------------------------------------------
+           L        R15,@THTHASH2            R15:  @THTHASH2
+           BALR     R14,R15                        CALC HASH FOR KEY
+           J        COMPRESS                       CALC BUCKET INDEX
+*----------------------------------------------------------------------
+*          REHASH USING DJB2 FUNCTION
+*----------------------------------------------------------------------
+REHASH     DS       0H
+           L        R15,@THTHASH3            R15:  @THTHASH3
+           BALR     R14,R15                        CALC HASH FOR KEY
+*----------------------------------------------------------------------
+*          COMPRESS THE HASH TO A BUCKET INDEX
+*          BY DIVIDING THE HASH WITH THE BUCKETS COUNT
+*          AND USING THE REMINDER AS THE INDEX NUMBER
+*          THE BUCKETS COUNT SHOULD BE A PRIME NUMBER
+*----------------------------------------------------------------------
+COMPRESS   DS       0H
+           L        R5,KEYHASH               R5:   32BIT HASH KEY
+           L        R6,THTBUCKC              R6    COUNT BUCKETS
+           SR       R4,R4                    R4    BUCKET INDEX
+           DLR      R4,R6                          HASH / COUNT BUCKETS
+*----------------------------------------------------------------------
+*          CALC OFFSET OF BUCKET IN BYTES
+*----------------------------------------------------------------------
+           L        R8,THTBSIZE              R8:   BUCKET SIZE
+           LR       R7,R4                    R7:   MY BUCKET INDEX
+           SR       R6,R6                          ZERO OUT FOR MLR
+           MLR      R6,R8                    R7:   RBA OF MY BUCKET
+           L        R14,@THTBUCK             R14   RBA BUCKET AREA
+           LA       R14,0(R14,R10)           R14   @BUCKET AREA
+           LA       R3,0(R7,R14)             R3:   @MY BUCKET
+           L        R15,@THTBUCKE            R15:  RBA END BUCKET AREA
+           LA       R15,0(R15,R10)           R15   @END BUCKET AREA
+           LR       R7,R3                    R7:   @MY_BUCKET
+           SLR      R7,R10                   R7:   RBA MY_BUCKET
+           RISBG    R7,R7,64,X'00'+31,32     R7H:  SAVE RBA MY_BUCKET
+*----------------------------------------------------------------------
+*          TEST IF BUCKET IS FREE OR
+*          CONTAINS OUR KEY
+*----------------------------------------------------------------------
+TESTBUCK   DS       0H
+           USING    THTBUCK,R3                     ADDRESS THE BUCKET
+           TM       THTUFLAG,THTFREE               IS THE BUCKET EMPTY?
+           JZ       MERGE0                         YES, THEN USE IT
+           L        R4,THTTID                R4:   TABLE ID WE LOOK FOR
+           LLC      R9,KEYL                  R9:   LEN KEY WE LOOK FOR
+           L        R5,THTBTID               R5:   TBLID OF THIS BUCKET
+           CRJNE    R4,R5,TESTBUCK1                GO ON IF NOT OUR TBL
+           LLC      R7,THTKEYL               R7:   LEN KEY OF THIS BUC.
+           CRJNE    R9,R7,TESTBUCK1                IF NOT EQUAL GO NEXT
+           AHI      R7,-1                    R7:   DECR. LENGTH FOR CLC
+           L        R5,@KEY                  R5:   @KEY
+           EX       R7,KEYCLC                      IS THIS OUR KEY ?
+           JE       MERGE000                       YES, UPDATE RECORD
+TESTBUCK1  CIJE     R11,1,PROBING                  REHASH COLLISON ?
+*----------------------------------------------------------------------
+*          AFTER 1. COLLISION WE REHASH AND INDEX TO NEW BUCKET
+*          BUT FIRST WE TEST IF THIS BUCKET CONTAINS OUR KEY+TABLE ID
+*----------------------------------------------------------------------
+           IILF     R11,1                          INDICATE COLLISION
+           J        REHASH                         REHASH
+*----------------------------------------------------------------------
+*          AFTER 2. HASH COLLISION
+*          WE NOW USE LINEAR PROBING TO FIND A FREE BUCKET
+*          WE START AT THE INDEXED BUCKET AND SEARCH BACKWARDS
+*          TOWARDS THE BEGINNING OF THE BUCKETS AREA
+*          ONCE WE HIT THE FIRST BUCKET WE SET THE POINTER
+*          TO THE LAST BUCKET AND SET THE
+*          END POINTER TO THE INDEXED BUCKET WE STARTED AT
+*          IF WE FIND AN EMPTY BUCKET WE USE IT AND IF WE ENCOUNTER
+*          AN BUCKET WITH OUR TABLE ID AND KEY WE RETURN AN ERROR
+*----------------------------------------------------------------------
+PROBING    ASI      THTCOLLS,1                     INCR.COLLISION COUNT
+           L        R4,THTTID                R4:   TABLE ID WE LOOK FOR
+           LLC      R9,KEYL                  R8:   LEN KEY WE LOOK FOR
+NEXTBUCK   CRJE     R3,R14,ATBEGIN                 WE ARE AT THE BEGIN
+           SLR      R3,R8                    R3:   @PREVIOUS BUCKET
+           TM       THTUFLAG,THTFREE               IS THE BUCKET FREE?
+           JZ       MERGE0                         YES, USE IT
+           TM       THTUFLAG,THTDEL                IF DELETED
+           JO       MERGE0                         THEN REUSE BUCKET
+           L        R5,THTBTID               R5:   TBLID OF THIS BUCKET
+           CRJNE    R4,R5,NEXTBUCK                 GO ON IF NOT OUR TBL
+           LLC      R7,THTKEYL               R7:   LEN KEY OF THIS BUC.
+           CRJNE    R9,R7,NEXTBUCK                 IF NOT EQUAL GO NEXT
+           AHI      R7,-1                    R7:   DECR. LENGTH FOR CLC
+           L        R5,@KEY                  R5:   @KEY
+           EX       R7,KEYCLC                      IS THIS OUR KEY ?
+           JE       MERGE00                        YES, UPDATE RECORD
+           J        NEXTBUCK                       NO, CONTINUE SEARCH
+ATBEGIN    LR       R3,R15                         START AT LAST BUCKET
+           ALR      R3,R8
+           J        NEXTBUCK                       CONTINUE SEARCH
+*----------------------------------------------------------------------
+*          MERGE KEY   + VALUE INTO BUCKET
+*          WE MARK THE BUCKET AS USED AND SET THE RBA
+*          OF THE ORIGINAL BUCKET WE INDEXED TO
+*          AFTER THAT WE UPDATE THE TABLE BUCKET CHAIN
+*          AND MERGE KEY + VALUE
+*----------------------------------------------------------------------
+MERGE000   DS       0H
+           IILF     R11,2                          INDICATE UPDATE
+           J        MERGE
+MERGE00    DS       0H
+           IILF     R11,2                          INDICATE UPDATE
+MERGE0     DS       0H
+           CIJNE    R11,1,MERGE                    REHASH COLLISON ?
+           RISBG    R7,R7,32,X'00'+0,32      R7:   RESTOR RBA MY_BUCKET
+           ST       R7,THTBUCKO                    SET ORIG. BUCKET RBA
+MERGE      DS       0H
+           L        R5,VALUEL                R5:   LENGTH OF VALUE
+           L        R0,THTVSIZE              R0:   SIZE KEY/VAL FIELD
+           ALR      R5,R9                    R5:   LENGTH KEY/VALUE
+           CRJH     R5,R0,ERROR06                  IF TOO LARGE, ERROR
+           LR       R4,R3                    R4:   @EMPTY BUCKET
+           SLR      R4,R10                   R4:   RBA OF EMPTY BUCKET
+           MVI      THTUFLAG,THTUSED               SET BUCKET AS USED
+*----------------------------------------------------------------------
+*          TBCB: CHAIN TO MY BUCKET IF WE ARE FIRST IN TABLE
+*----------------------------------------------------------------------
+           ICM      R0,B'1111',THTFBUCK      R0:   RBA 1. BUCK IN TBL
+           JNZ      MERGE1                         IF ALREADY SET,CONT.
+           ST       R4,THTFBUCK                    SET RBA EMPTY BUCKET
+MERGE1     DS       0H
+           ICM      R5,B'1111',THTLBUCK      R5:   RBA LAST BUCK IN TBL
+           JZ       MERGE2                         WE ARE 1. DONT CHAIN
+*----------------------------------------------------------------------
+*          LAST BUCKET: CHAIN TO MY BUCKET
+*----------------------------------------------------------------------
+           DROP     R3                             DROP EMPTY BUCKET
+           USING    THTBUCK,R6                     ADDRESS LAST BUCK
+           LR       R6,R5                    R6:   RBA LAST BUCK
+           LA       R6,0(R6,R10)             R6:   @LAST BUCK IN TBL
+           ST       R4,THTBUCKN                    CHAIN TO EMPTY BUCK
+           DROP     R6                             DROP LAST BUCK
+           USING    THTBUCK,R3                     ADDRESS EMPTY BUCKET
+*----------------------------------------------------------------------
+*          MY BUCKET: CHAIN TO LAST BUCKET
+*----------------------------------------------------------------------
+MERGE2     DS       0H
+           ST       R5,THTBUCKP                    SET LAST BUC AS PREV
+           ST       R4,THTLBUCK                    MY BUCK IS NEW LAST
+*----------------------------------------------------------------------
+*          MOVE KEY AND VALUE INTO BUCKET
+*----------------------------------------------------------------------
+           LLC      R9,KEYL                  R9:   KEY LENGTH
+           MVC      THTBTID,THTTID                 SET MY TABLE ID
+           MVC      THTVALL,VALUEL                 SET MY VALUE LENGTH
+           STC      R9,THTKEYL                     SET MY KEY LENGTH
+           LA       R8,THTBUCKL(,R3)         R8:   @KEY/VALUE FIELD
+           L        R4,@KEY                  R4:   @KEY
+           LR       R5,R9                    R5:   LENGTH KEY
+           MVCL     R8,R4                          SET KEY IN BUCKET
+           LA       R8,0(R9,R8)              R8:   @VALUE FIELD
+           L        R9,VALUEL                R9:   LENGTH VALUE
+           LR       R5,R9                    R5:   LENGTH VALUE
+           L        R4,@VALUE                R4:   @VALUE
+           MVCL     R8,R4                          SET VALUE IN BUCKET
+*----------------------------------------------------------------------
+*          SET HTCB BUCKET USAGE FIELDS
+*----------------------------------------------------------------------
+           CIJE     R11,2,RETURN                   IF UPDATE SKIP
+           ASI      THTBUCKU,1                     INCR. USED BUCKETS
+           ASI      THTBUCKF,-1                    DECR. FREE BUCKETS
+*----------------------------------------------------------------------
+*          INCREMENT NUMBER RECORDS IN TBCB
+*----------------------------------------------------------------------
+           ASI      THTTNBUC,1                     INCR. RECORDS COUNT
+RETURN     SR       R15,R15                  R15:  RC=0
+***********************************************************************
+* RETURN
+***********************************************************************
+EXIT01     DS       0H
+           PR       ,
+***********************************************************************
+* ERRORS
+***********************************************************************
+*----------------------------------------------------------------------
+*          NO HTCB FOUND, HASHTABLE MUST BE  INIT
+*----------------------------------------------------------------------
+ERROR01    DS       0H
+           IILF     R15,#NO_HTCB
+           J        EXIT01
+*----------------------------------------------------------------------
+*          NO TABLES FOUND
+*----------------------------------------------------------------------
+ERROR02    DS       0H
+           IILF     R15,#NO_TABLES
+           J        EXIT01
+*----------------------------------------------------------------------
+*          TABLE NOT FOUND
+*----------------------------------------------------------------------
+ERROR03    DS       0H
+           IILF     R15,#TABLE_NOT_FOUND
+           J        EXIT01
+*----------------------------------------------------------------------
+*          HASHTABLE IS FULL
+*----------------------------------------------------------------------
+ERROR05    DS       0H
+           IILF     R15,#HASHTBL_FULL
+           J        EXIT01
+*----------------------------------------------------------------------
+*          KEY ALREADY IN TABLE
+*----------------------------------------------------------------------
+ERROR07    DS       0H
+           IILF     R15,#KEY_EXISTS_IN_TBL
+           J        EXIT01
+*----------------------------------------------------------------------
+*          KEY+VALUE IS TOO LONG
+*----------------------------------------------------------------------
+ERROR06    DS       0H
+           IILF     R15,#KEYVAL_TOO_LONG
+           J        EXIT01
+***********************************************************************
+* CONSTANTS
+***********************************************************************
+           DS       0F
+@THTHASH2  DC       V(THTHASH2)
+@THTHASH3  DC       V(THTHASH3)
+TBLCLC     CLC      THTTNAME(0),0(R15)
+           USING    THTBUCK,R3
+KEYCLC     CLC      THTKEYL+1(0),0(R5)
+           DROP     R3
+           LTORG
+***********************************************************************
+* DSECTS
+***********************************************************************
+           THTCOMM  ,                              THT COMMAREA
+           THTCBLKS ,                              THT CONTROL BLOCKS
+           END      THTMERG0

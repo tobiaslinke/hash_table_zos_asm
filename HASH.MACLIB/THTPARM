@@ -1,0 +1,47 @@
+            MACRO                                                       00010000
+&LABEL      THTPARM &GEN=                                               00020000
+            AIF   ('&GEN' EQ 'DSECT').DSECT                             00030000
+            AIF   ('&GEN' EQ 'CONST').CONST                             00040000
+            MNOTE 8,'THTPARM MACRO STATEMENT HAS AN INVALID VALUE'      00050000
+            AGO   .ENDMAC                                               00060000
+.CONST      ANOP                                                        00070000
+*---------------------------------------------------------------------- 00080000
+* Defaults                                                              00090000
+*---------------------------------------------------------------------- 00100000
+* dataspaces                                                            00160000
+THTPAGES_D  EQU   1                PAGESIZE IN 4K BLOCK                 00161000
+THTCACHES_D EQU   5000000          5 MILL. BYTES ABOUT 4.7 MB           00170000
+THTMDSPPR_D EQU   C'THTC'          CACHE DATASPACE PREFIX               00180000
+THTDSPPRE_D EQU   C'$'             THT DATASPACE PREFIX                 00210000
+* the dataspace names are created the following way                     00220000
+* Char1   : THTDSPPRE                                                   00230000
+* CHAR2-5 : THTDSPPR                                                    00240000
+* CHAR6-8 : 000 - FFF                                                   00250000
+                                                                        00260000
+*&THTRXINI1_D SETC  'THTIRX01'                                          00280000
+*&THTRXINI2_D SETC  'THTIRX02'                                          00290000
+                                                                        00300000
+*---------------------------------------------------------------------- 00310000
+* set THTAPRM Constants                                                 00320000
+*---------------------------------------------------------------------- 00330000
+RXINI1      DC   CL8'&THTRXINI1_D'                                      00340000
+RXINI2      DC   CL8'&THTRXINI2_D'                                      00350000
+MASTR       DC   CL8'THTMASTR'                                          00360000
+CONSL       DC   CL8'THTCONSL'                                          00370000
+RXCTL       DC   CL8'THTRXCTL'                                          00380000
+RXRUL       DC   CL8'THTRXRUL'                                          00390000
+ASCTL       DC   CL8'THTASCTL'                                          00400000
+            AGO  .ENDMAC                                                00410000
+.DSECT      ANOP                                                        00420000
+*---------------------------------------------------------------------- 00430000
+* THT PARAMETER AREA MAPPING MACRO                                      00440000
+*---------------------------------------------------------------------- 00450000
+THTPARM     DSECT                                                       00460000
+THTMAXRST   DS    F                MAX. NUMBER TCB RESTARTS             00500000
+THTCACHES   DS    F                SIZE OF CACHE DATASPACES             00510000
+THTDSPBLK   DS    F                (THTCACHES+4095)/4096                00520000
+THTCDSPPR   DS    CL4              CACHE DATASPACE PREFIX               00530000
+THTDSPPRE   DS    CL1              THT DATSPACES PREFIX                 00580000
+THTPARML    EQU   *-THTPARM                                             00590000
+.ENDMAC     ANOP                                                        00600000
+            MEND                                                        00610000

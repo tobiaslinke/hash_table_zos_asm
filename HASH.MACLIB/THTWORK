@@ -1,0 +1,96 @@
+            MACRO                                                       00010000
+&LABEL      THTWORK                                                     00020000
+*---------------------------------------------------------------------- 00030000
+* THTMASTR shared Workarea Mapping Macro                                00040000
+*---------------------------------------------------------------------- 00050000
+THTWORK     DSECT                                                       00060000
+* Pointer                                                               00070000
+@LOG        DS   A           pointer LOG Dcb                            00080000
+@TAFPRINT   DS   A           pointer TAFPRINT routine                   00090000
+@TAFWTO     DS   A           pointer TAFWTO routine                     00100000
+@TAFCONVH   DS   A           pointer TAFCONVH routine                   00110000
+@IRXINIT    DS   A           pointer create Rexx Environment            00120000
+@IEANTCR    DS   A           pointer create name token pair             00130000
+@IEANTDL    DS   A           pointer delete name token pair             00140000
+@IEANTRT    DS   A           pointer retrieve name token                00150000
+@THTPARM    DS   A           pointer THTPARM area                       00160000
+@THTPRMLB   DS   A           pointer THTPRMLB module                    00170000
+@MESSAGES   DS   A           pointer messages module                    00180000
+@THTPC001   DS   A           pointer PC routine 1                       00190000
+@THTPC002   DS   A           pointer PC routine 2                       00200000
+@THTPC003   DS   A           pointer PC routine 3                       00210000
+* THTMASTR and Subtasks ECB's                                           00220000
+MASTR_TO_CONSL DS F          THTMASTR --> THTCONSL                      00230000
+MASTR_TO_ASCTL DS F          THTMASTR --> THTASCTL                      00240000
+MASTR_TO_RXCTL DS F          THTMASTR --> THTRXCTL                      00250000
+CONSL_TO_MASTR DS F          THTCONSL --> THTMASTR                      00260000
+CONSL_TO_RXCTL DS F          THTCONSL --> THTRXCTL                      00270000
+ASCTL_TO_MASTR DS F          THTASCTL --> THTMASTR                      00280000
+RXCTL_TO_MASTR DS F          THTRXCTL --> THTMASTR                      00290000
+RXCTL_TO_CONSL DS F          THTRXCTL --> THTCONSL                      00300000
+RXCTL_TO_RXRUL DS F          THTRXCTL --> THTRXRUL                      00310000
+RXRUL_TO_RXCTL DS F          THTRXRUL --> THTRXCTL                      00320000
+* EMCS ECB's                                                            00330000
+ALERT_ECB   DS   F           EMCS ALERT ECB                             00340000
+MSGS_ECB    DS   F           EMCS Messages ECB                          00350000
+* Subtasks Exit ECB's                                                   00360000
+THTPRMLB_ECB DS  F                                                      00370000
+THTCONSL_ECB DS  F                                                      00380000
+THTASCTL_ECB DS  F                                                      00390000
+THTRXCTL_ECB DS  F                                                      00400000
+THTRXRUL_ECB DS  F                                                      00410000
+* Subtasks TCB's                                                        00420000
+THTPRMLB_TCB DS  F                                                      00430000
+THTCONSL_TCB DS  F                                                      00440000
+THTASCTL_TCB DS  F                                                      00450000
+THTRXCTL_TCB DS  F                                                      00460000
+THTRXRUL_TCB DS  F                                                      00470000
+* Subtasks Status Flags                                                 00480000
+CONSL_FLAG   DS  F           THTCONSL Status Flag                       00490000
+ASCTL_FLAG   DS  F           THTASCTL Status Flag                       00500000
+RXCTL_FLAG   DS  F           THTRXCTL Status Flag                       00510000
+RXRUL_FLAG   DS  F           THTRXRUL Status Flag                       00520000
+* Event Flags                                                           00530000
+SHUT_FLAG    DS  F           Shutdown Flag                              00540000
+ICE_FLAG     DS  F           In Case of Emergency Flag                  00550000
+FLAG_UP      DS  F                                                      00560000
+FLAG_DOWN    DS  F                                                      00570000
+FLAG_YES     DS  F                                                      00580000
+FLAG_NO      DS  F                                                      00590000
+*                                                                       00600000
+PC_Number   DS   F                                                      00610000
+*                                                                       00620000
+MSGALET     DS   F           Message Dataspace Alet                     00630000
+MSGTOKEN    DS   CL8         Message Dataspace Stoken                   00640000
+MSGNAME     DS   CL8         Message Dataspace Name                     00650000
+                                                                        00660000
+TOKENLIST   DS   0D          list of ET tokens                          00670000
+TKCOUNT     DS   FL4         number of ET tokens                        00680000
+TKVALUE     DS   FL4         ET token                                   00690000
+*                                                                       00700000
+LX_LIST     DS   0D          list of LX's                               00710000
+LXCOUNT     DS   FL4         number of LX's                             00720000
+LXNUMBER    DS   FL4         one LX entry                               00730000
+*                                                                       00740000
+AX_LIST     DS   0H          list of AX's                               00750000
+AXENTRIES   DS   FL2         number of AX's                             00760000
+AXENTRY     DS   FL2         one AX entry                               00770000
+THTWORKL    EQU   *-THTWORK                                             00780000
+*---------------------------------------------------------------------- 00790000
+* Constants                                                             00800000
+*---------------------------------------------------------------------- 00810000
+* Status flags                                                          00820000
+UP          EQU  C'  UP'                                                00830000
+DOWN        EQU  C'DOWN'                                                00840000
+YES         EQU  C' YES'                                                00850000
+NO          EQU  C'  NO'                                                00860000
+* Post Event Codes                                                      00870000
+EVNT_ALERT   EQU C'ALE'       Emcs Alert                                00880000
+EVNT_SHUTD   EQU C'SHU'       Shutdown                                  00890000
+EVNT_EMRCY   EQU C'ICE'       Emergency                                 00900000
+EVNT_MODFY   EQU C'MOD'       Modify Cmd                                00910000
+EVNT_READY   EQU C'RDY'       Task is ready                             00920000
+EVNT_BUSY    EQU C'BSY'       Task is busy                              00930000
+EVNT_MSGS    EQU C'MSG'       messages in DSP                           00940000
+EVNT_MAXTIME EQU C'MTI'       max Rule Exec Time exceeded               00950000
+            MEND                                                        00960000

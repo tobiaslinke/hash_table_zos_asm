@@ -1,0 +1,1053 @@
+***********************************************************************
+* DESCRIPTION:                                                        *
+* ___________________________________________________________________ *
+* ___________________________________________________________________ *
+* FUNCTIONS:                                                          *
+* ___________________________________________________________________ *
+* INIT(TABLE_COUNT,BUCKET_COUNT,BUCKET_SIZE)                          *
+* CREATE(TABLE_NAME)                                                  *
+* DROP(TABLE_NAME)                                                    *
+* PURGE(TABLE_NAME)                                                   *
+* MERGE(TABLE_NAME,KEY,VALUE)                                         *
+* INSERT(TABLE_NAME,KEY,VALUE)                                        *
+* UPDATE(TABLE_NAME,KEY,VALUE)					                      *
+* SELECT(TABLE_NAME,KEY)					                          *
+* DELETE(TABLE_NAME,KEY)					                          *
+* PUT(TABLE_NAME,VALUE)						                          *
+* GET(TABLE_NAME)						                              * 
+* COMMIT()							                                  *
+* DUMP()							                                  *
+* SHOW(STATISTICS)						                              *
+* SHOW(TABLES)							                              *
+* ___________________________________________________________________ *
+* ___________________________________________________________________ *
+***********************************************************************
+           TITLE    'THTBATCH BATCH PROGRAMM TO CONTROL HASH TABLE LDS'
+           SYSSTATE ARCHLVL=2
+THTBATCH   CSECT    ,
+THTBATCH   AMODE    31
+THTBATCH   RMODE    ANY
+***********************************************************************
+* REGISTER
+***********************************************************************
+R0         EQU      0
+R1         EQU      1                                                   
+R2         EQU      2                                                   
+R3         EQU      3                                                   
+R4         EQU      4                              @SYSIN               
+R5         EQU      5                                                   
+R6         EQU      6                                                   
+R7         EQU      7                                                   
+R8         EQU      8                                                   
+R9         EQU      9                              @THTCOMM             
+R10        EQU      10                             @CONSTANTS
+R11        EQU      11                             @WORKAREA            
+R12        EQU      12                             @THTBATCH            
+R13        EQU      13                             LINKAGE              
+R14        EQU      14                             LINKAGE              
+R15        EQU      15                             LINKAGE              
+***********************************************************************
+* ENTRY
+***********************************************************************
+           USING    THTBATCH,R15
+           SAVE     (14,12)
+           LR       R12,R15
+           DROP     R15
+           USING    THTBATCH,R12
+           LARL     R10,CONSTANTS
+           USING    CONSTANTS,R10
+***********************************************************************
+* CREATE WORKAREA
+***********************************************************************
+           STORAGE  OBTAIN,LENGTH=WORKAREAL,LOC=31
+           LR       R11,R1
+           LR       R2,R11
+           IILF     R3,WORKAREAL
+           SR       R1,R1
+           MVCL     R2,R0
+           USING    WORKAREA,R11
+           ST       R13,SAVEAREA+4
+           LA       R15,SAVEAREA
+           ST       R15,8(R13)
+           LR       R13,R15
+***********************************************************************
+* MAIN
+***********************************************************************
+*----------------------------------------------------------------------
+*          GET STORAGE FOR LOG DCB AND OPEN FOR OUTPUT
+*----------------------------------------------------------------------
+           STORAGE  OBTAIN,LENGTH=DCBLNGQS,LOC=(24),ADDR=@LOG           
+           L        R3,@LOG                                             
+           MVC      0(DCBLNGQS,R3),LOGDCB                               
+           OPEN     ((R3),OUTPUT),MODE=31                               
+           CIJNE    R15,0,ERROR01
+*----------------------------------------------------------------------
+*          GET STORAGE FOR SYSIN DCB AND OPEN FOR INPUT
+*----------------------------------------------------------------------
+           STORAGE  OBTAIN,LENGTH=DCBLNGQS,LOC=(24),ADDR=@SYSIN         
+           L        R4,@SYSIN                                           
+           MVC      0(DCBLNGQS,R4),SYSINDCB                             
+           OPEN     ((R4),INPUT),MODE=31                                
+           CIJNE    R15,0,ERROR01
+*----------------------------------------------------------------------
+*          SET STANDARD DDNNAME 'TABLE'
+*----------------------------------------------------------------------
+           LA       R1,L'DEFLTDDN
+           STC      R1,DIVDDN
+           MVC      DIVDDN+1(L'DEFLTDDN),DEFLTDDN
+*----------------------------------------------------------------------
+*          ACCESS AND MAP THE LDS
+*----------------------------------------------------------------------
+           SETMSG   MSG=BATCHSTART
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=BATCH,MF=(E,PRINT)
+*----------------------------------------------------------------------
+*          DIV IDENTIFY
+*----------------------------------------------------------------------
+           SETMSG   MSG=DIVIDENT
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=BATCH,$2=DIVLDS,MF=(E,PRINT)
+           DIV      IDENTIFY,TYPE=DA,ID=HTTOKEN,DDNAME=DIVDDN,         +
+               MF=(E,IDENT)
+           CIJNE    R15,0,ERROR01
+*----------------------------------------------------------------------
+*          DIV ACCESS MODE=UPDATE
+*----------------------------------------------------------------------
+           MVC      DIVMODE,=C'UPDATE'
+           SETMSG   MSG=DIVACCESS
+           IILF     R2,6
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=BATCH,$3=DIVLDS,             +
+               $2=DIVMODE,$2L=(R2),MF=(E,PRINT)
+           DIV      ACCESS,ID=HTTOKEN,MODE=UPDATE,MF=(E,ACCESS)
+           CIJNE    R15,0,ERROR01
+*----------------------------------------------------------------------
+*          GET STORAGE FOR ONE 4K BLOCK
+*----------------------------------------------------------------------
+           STORAGE  OBTAIN,LENGTH=4096,LOC=31,BNDRY=PAGE,ADDR=@HT
+*----------------------------------------------------------------------
+*          MAP THE HTCB
+*----------------------------------------------------------------------
+           SETMSG   MSG=DIVMAPHTCB
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=BATCH,MF=(E,PRINT)
+           IILF     R1,1
+           ST       R1,HTSIZE4K
+           DIV      MAP,ID=HTTOKEN,AREA=@HT,SPAN=HTSIZE4K,MF=(E,MAP)
+           CIJNE    R15,0,ERROR01
+*----------------------------------------------------------------------
+*          GET SIZE OF HASHTABLE
+*----------------------------------------------------------------------
+GETSIZE    DS       0H
+           L        R1,@HT                   R1:   PTR TO HASHTABLE MAP
+           USING    THTHTCB,R1                     ADDRESS HASHTABLE
+           ICM      R3,B'1111',THTSIZE       R3:   SIZE HASHTABLE
+           JNZ      CONTINUE                       IF ZERO ERROR
+           DROP     R1
+           SETMSG   MSG=HASHINITERR          LOG:  HASHTABLE NOT INIT
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=BATCH,MF=(E,PRINT)
+           OI       FLAG,NOHTCB                    INDICATE NO HTCB
+           J        SYSIN                          GO GET SYSIN
+*----------------------------------------------------------------------
+*          UNMAP AND RELEASE STORAGE
+*----------------------------------------------------------------------
+CONTINUE   DS       0H
+           DIV      UNMAP,ID=HTTOKEN,AREA=@HT,MF=(E,UNMAP)
+           CIJNE    R15,0,ERROR01                  IF RC<>0 THEN ERROR
+           STORAGE  RELEASE,ADDR=@HT,LENGTH=4096   RELEASE MAP STORAGE
+*----------------------------------------------------------------------
+*          GET STORAGE FOR WHOLE HASHTABLE AND MAP IT
+*----------------------------------------------------------------------
+           CFI      R3,4095                        MUST BE > 4095 BYTES
+           JH       CONTINUE1                      IF>=4K THEN CONTINUE
+           IILF     R3,4096                        MIN. 4K FOR DIV MAP
+CONTINUE1  DS       0H
+           ST       R3,HTSIZE                      SET SIZE IN TAFWORK
+           LR       R2,R3                    R2:   SIZE HASHTABLE BYTES
+           SRL      R2,10                    R2:   SIZE IN KB
+           TAFCONVC SRC=(R2),MF=(E,CONVC)          CONVERT TO EBCDIC
+           ST       R0,@NUMBER                     SAVE PTR TO NUMBER
+           ST       R1,NUML                        SAVE LENGTH NUMBER
+           SETMSG   MSG=DIVSTOR              LOG:  GET STOR FOR SIZE
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=BATCH,$2=@NUMBER,$2L=NUML,   +
+               MF=(E,PRINT)
+           STORAGE  OBTAIN,LENGTH=(R3),LOC=31,BNDRY=PAGE,ADDR=@HT
+           SETMSG   MSG=HASHADDR
+           TAFCONVH SRC=@HT,SRCL=4,TGT=RCCHAR,MF=(E,CONV)
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=BATCH,$2=RCCHAR,MF=(E,PRINT)
+*----------------------------------------------------------------------
+*          CALCULATE SIZE HASHTABLE IN 4K BLOCKS
+*----------------------------------------------------------------------
+           AHI      R3,4095
+           IILF     R1,4096
+           SR       R2,R2
+           DLR      R2,R1
+           ST       R3,HTSIZE4K
+           SETMSG   MSG=DIVMAP
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=BATCH,MF=(E,PRINT)
+           DIV      MAP,ID=HTTOKEN,AREA=@HT,SPAN=HTSIZE4K,MF=(E,MAP)
+           CIJNE    R15,0,ERROR01
+           SETMSG   MSG=DIVFIN
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=BATCH,MF=(E,PRINT)
+*----------------------------------------------------------------------
+*          READ SYSIN
+*----------------------------------------------------------------------
+SYSIN      DS       0H
+           SR       R9,R9                          SET @THTCOMM ZERO
+GETSYSIN   DS       0H
+           CIJE     R9,0,GETSYSIN2                 IF NO THTCOMM GO ON
+           FREE     R9                             FREE THTCOMM AREA
+GETSYSIN2  DS       0H
+           ASI      LINECOUNT,1                    INCR. LINE COUNTER
+           TAFCONVC SRC=LINECOUNT,MF=(E,CONVC)
+           ST       R0,@LINE                       SAVE PTR LINE
+           ST       R1,LINEL                       SAVE LENGTH LINE
+           SR       R0,R0
+           L        R4,@SYSIN                R4:   @SYSIN
+           GET      (R4)                           GET RECORD
+*----------------------------------------------------------------------
+*          FIND BEGIN & LENGTH OF SYSIN TEXT
+*----------------------------------------------------------------------
+           LR       R6,R1                    R6:   @SYSIN RECORD
+           IILF     R0,72                    R0:   LENGTH SYSIN RECORD
+           L        R15,@TAFLENGT            R15:  @TAFLENGT
+           BALR     R14,R15                        GET BEGIN & LENGTH
+           CIJE     R0,0,GETSYSIN                  IF LEN = 0 THEN NEXT
+*----------------------------------------------------------------------
+*          DETERMINE IF BATCH ONLY COMMAND
+*----------------------------------------------------------------------
+           CLC      =CL5'TRACE',0(R1)              TRACE COMMAND?
+           JNE      NEXT01                         NO, CONTINUE
+           OI       FLAG,TRACE                     YES, SET TRACE FLAG
+           J        GETSYSIN                       GET NEXT COMMAND
+NEXT01     DS       0H
+*----------------------------------------------------------------------
+*          PARSE THE COMAND TEXT
+*----------------------------------------------------------------------
+           MVC      MODULE,=C'THTPARSR'
+           L        R15,@THTPARSR            R15:  @THTPARSR
+           BALR     R14,R15                        PARSE THE RECORD
+           LR       R9,R1                    R9:   @THTCOMM
+           USING    THTCOMM,R9                     ADDRESS THTCOMM
+           CIJNE    R15,0,ERROR03                  IF RC<>0 THEN ERROR
+           MVC      @MAPAREA,@HT                   MV PTR HT MAP
+*----------------------------------------------------------------------
+*          DETERMINE THE THT COMMAND
+*----------------------------------------------------------------------
+           TM       FLAG,NOHTCB                    IF NO HTCB, FUNCTION
+           JO       INIT00                         MUST BE INIT()
+           TM       FUNCTION,THTSELECT             SELECT ?
+           JO       SELECT00
+           TM       FUNCTION,THTINSERT             INSERT ?
+           JO       INSERT00
+           TM       FUNCTION,THTUPDATE             UPDATE ?
+           JO       UPDATE00
+           TM       FUNCTION,THTMERGE              MERGE ?
+           JO       MERGE00
+           TM       FUNCTION,THTPUT                PUT ?
+           JO       PUT00
+           TM       FUNCTION,THTGET                GET ?
+           JO       GET00
+           TM       FUNCTION,THTDELETE             DELETE ?
+           JO       DELETE00
+           TM       FUNCTION,THTPURGE              PURGE RECORDS?
+           JO       PURGE00
+           TM       FUNCTION,THTCOMMIT             COMMIT ?
+           JO       COMMIT00
+           TM       FUNCTION,THTCREATE             CREATE ?
+           JO       CREATE00
+           TM       FUNCTION,THTDROP               DROP   ?
+           JO       DROP00
+           TM       FUNCTION,THTINIT               INIT   ?
+           JO       INIT00
+           TM       FUNCTION,THTDUMP               DUMP   ?
+           JO       DUMP00
+           TM       FUNCTION,THTSHOWSTA            SHOW STATISTICS ?
+           JO       SHOWSTA00
+           TM       FUNCTION,THTSHOWTBL            SHOW TABLES ?
+           JO       SHOWTBL00
+*----------------------------------------------------------------------
+*          WE SHOULD NEVER REACH THIS POINT
+*----------------------------------------------------------------------
+           J        RETURN                         EXIT PROCESSING
+***********************************************************************
+* RETURN
+***********************************************************************
+RETURN     DS       0H
+*----------------------------------------------------------------------
+*          RELEASE HASHTABLE RESOURCES
+*----------------------------------------------------------------------
+           DIV      SAVE,ID=HTTOKEN,SPAN=HTSIZE4K,MF=(E,SAVE)
+           DIV      UNMAP,ID=HTTOKEN,AREA=@HT,MF=(E,UNMAP)
+           DIV      UNACCESS,ID=HTTOKEN,MF=(E,UNACCESS)
+           DIV      UNIDENTIFY,ID=HTTOKEN,MF=(E,UNIDENT)
+           L        R6,HTSIZE                R6:   SIZE HASHTBL CACHE
+           STORAGE  RELEASE,ADDR=@HT,LENGTH=(R6)   RELEASE CACHE STOR.
+           TAFCONVH SRC=MAXRC,TGT=RCCHAR,SRCL=4,MF=(E,CONV)
+           ICM      R6,B'1111',MAXRC         R6:   MAXRC
+           JZ       SUCCESS                        IF MAXRC=0, SUCCESS
+*----------------------------------------------------------------------
+*          MAXRC>0 - ERRORS WHILE PROCESSING
+*----------------------------------------------------------------------
+           SETMSG   MSG=BATCHFINERR          LOG:  ENDED WITH ERRORS
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=BATCH,$2=RCCHAR,MF=(E,PRINT)
+           J        EXIT01                         EXIT PROCESSIG
+*----------------------------------------------------------------------
+*          MAXRC=0 - EVERYTHING OK
+*----------------------------------------------------------------------
+SUCCESS    DS       0H
+           SETMSG   MSG=BATCHFINSUC          LOG:  ENDED SUCCESSFULLY
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=BATCH,$2=RCCHAR,MF=(E,PRINT)
+EXIT01     DS       0H
+           CLOSE    ((R4)),MODE=31
+           STORAGE  RELEASE,LENGTH=DCBLNGQS,ADDR=(R4)
+           L        R4,@LOG
+           CLOSE    ((R4)),MODE=31
+           STORAGE  RELEASE,LENGTH=DCBLNGQS,ADDR=@LOG
+           L        R13,4(R13)               R13:  CALLERS SAVEAREA
+           STORAGE  RELEASE,LENGTH=WORKAREAL,ADDR=(R11)
+           LR       R15,R6
+           RETURN   (14,12),RC=(15)                RETURN TO CALLER
+***********************************************************************
+* ERRORS
+***********************************************************************
+ERROR00    DS       0H
+           SETMSG   MSG=BATCHNOHTCB
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$2=BATCH,MF=(E,PRINT)
+           IILF     R15,8
+           ST       R15,RC
+           J        EXIT01
+ERROR01    DS       0H
+           ST       R15,RC
+           ST       R0,RSN
+           J        EXIT01
+ERROR02    DS       0H
+           ST       R15,RC
+           L        R0,MAXRC
+           CRJNH    R15,R0,ERROR020
+           ST       R15,MAXRC
+ERROR020   DS       0H
+           TAFCONVH SRC=RC,SRCL=4,TGT=RCCHAR,MF=(E,CONV)
+           SETMSG   MSG=MODULEERR
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$2=MODULE,$3=RCCHAR,$1=BATCH,   +
+               MF=(E,PRINT)
+           J        GETSYSIN
+ERROR03    DS       0H
+           ST       R15,RC
+           L        R0,MAXRC
+           CRJNH    R15,R0,ERROR030
+           ST       R15,MAXRC
+ERROR030   DS       0H
+           TAFCONVH SRC=RC,SRCL=4,TGT=RCCHAR,MF=(E,CONV)
+           SETMSG   MSG=MODULEERR
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$2=MODULE,$3=RCCHAR,$1=BATCH,   +
+               MF=(E,PRINT)
+           SETMSG   MSG=BATCHERRMSG
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=BATCH,$2=MODULE,$3=THTERRMSG,+
+               MF=(E,PRINT)
+           J        GETSYSIN
+***********************************************************************
+* SUBROUTINES
+***********************************************************************
+*----------------------------------------------------------------------
+*          SAVE ALL CHANGES TO LINEAR DATASET
+*----------------------------------------------------------------------
+COMMIT00   DS       0H
+           SETMSG   MSG=BATCHCOMMIT          LOG:  PROCCESIING COMMIT
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           MVC      MODULE,=C'DIV SAVE'
+           DIV      SAVE,ID=HTTOKEN,SPAN=HTSIZE4K,MF=(E,SAVE)
+           CIJNE    R15,0,ERROR02
+           SETMSG   MSG=BATCHSAVED           LOG:  COMMITED SUCCESSFUL
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           J        GETSYSIN                       GET NEXT SYSIN
+*----------------------------------------------------------------------
+*          INITIALIZE HASH TABLE
+*----------------------------------------------------------------------
+INIT00     DS       0H
+           SETMSG   MSG=BATCHINIT            LOG:  PROCESSING INIT
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           TM       FUNCTION,THTINIT
+           JZ       ERROR00
+*----------------------------------------------------------------------
+*          NUMBER   OF TABLES
+*----------------------------------------------------------------------
+           SETMSG   MSG=BATCHTABLES          LOG:  NUMBER OF TABLES
+           TAFCONVC SRC=TBLNUM,MF=(E,CONVC)
+           ST       R0,@NUMBER
+           ST       R1,NUML
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@NUMBER,$1L=NUML,MF=(E,PRINT)
+*----------------------------------------------------------------------
+*          NUMBER   OF BUCKETS
+*----------------------------------------------------------------------
+           SETMSG   MSG=BATCHBUCKETS         LOG:  NUMBER OF BUCKETS
+           TAFCONVC SRC=BUCCOUNT,MF=(E,CONVC)
+           ST       R0,@NUMBER
+           ST       R1,NUML
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@NUMBER,$1L=NUML,MF=(E,PRINT)
+*----------------------------------------------------------------------
+*          SIZE     OF BUCKETS
+*----------------------------------------------------------------------
+           SETMSG   MSG=BATCHBUCKSIZE        LOG:  SIZE OF BUCKETS
+           TAFCONVC SRC=BUCSIZE,MF=(E,CONVC)
+           ST       R0,@NUMBER
+           ST       R1,NUML
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@NUMBER,$1L=NUML,MF=(E,PRINT)
+           LR       R1,R9                    R1:   @THTCOMM
+           L        R15,@THTINIT0            R15   @THTINIT0
+           MVC      MODULE,=C'THTINIT0'
+           BALR     R14,R15                        INIT HASHTABLE
+           CIJNE    R15,0,ERROR02                  IF RC<>0 THEN ERROR
+           SETMSG   MSG=BATCHINITEND         LOG:  INITIALIZED SUCCESS
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           XI       FLAG,NOHTCB                    RESET FLAG
+           SETMSG   MSG=BATCHCOMMIT          LOG:  PROCCESIING COMMIT
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           MVC      MODULE,=C'DIV SAVE'
+           DIV      SAVE,ID=HTTOKEN,SPAN=HTSIZE4K,MF=(E,SAVE)
+           CIJNE    R15,0,ERROR02
+           SETMSG   MSG=BATCHSAVED           LOG:  COMMITED SUCCESSFUL
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           J        GETSIZE                        REMAP THE HASHTABLE
+*----------------------------------------------------------------------
+*          DISPLAY ALL TABLE NAMES
+*----------------------------------------------------------------------
+SHOWTBL00  DS       0H
+           SETMSG   MSG=BATCHSHOWTBL
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           L        R15,@THTSHTAB            R15:  @THTSHTAB
+           MVC      MODULE,=C'THTSHTAB'
+           LR       R1,R9                    R1:   @THTCOMM
+           BALR     R14,R15                        GET STATISTICS
+           CIJNE    R15,0,ERROR02
+           L        R7,@THTRETURN            R7:   @RETURN_AREA
+           USING    #ARRAY,R7                      ADDRESS THE ARRAY
+           L        R6,#ARRAYELM             R6:   NUMBER ELEMENTS
+           DROP     R7
+           LA       R8,#ARRAYL(,R7)          R8:   ELEMENT INDX 0
+           USING    #ARRAYEL,R8                    ADDRESS ELEMENT
+ALLTABLES  DS       0H
+           L        R3,#ARRAYELML            R3:   LENGTH TABLENAME
+           L        R2,#ARRAYELM@            R2:   @TABLENAME
+           SETMSG   MSG=BATCHTABLE           LOG:  TABLE : ...
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=(R2),$1L=(R3),               +
+               MF=(E,PRINT)
+           LA       R8,#ARRAYELL(,R8)        R8:   NEXT ELEMENT
+           JCT      R6,ALLTABLES                   GET THEM ALL
+           FREE     R7                             FREE ARRAY
+           J        GETSYSIN
+*----------------------------------------------------------------------
+*          DISPLAY STATISTICS FROM HTCB
+*----------------------------------------------------------------------
+SHOWSTA00  DS       0H
+           SETMSG   MSG=BATCHSHOWSTAT        LOG:  PROCCESSING SHOWSTAT
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           L        R15,@THTSHSTA            R15:  @THTSHSTA
+           MVC      MODULE,=C'THTSHSTA'
+           LR       R1,R9                    R1:   @THTCOMM
+           BALR     R14,R15                        GET STATISTICS
+           CIJNE    R15,0,ERROR02
+           L        R6,@THTRETURN            R6:   RETURN AREA
+           USING    THTSHSTAR,R6                   ADDRESS RETURN AREA
+*----------------------------------------------------------------------
+*          NUMBER   OF BUCKETS
+*----------------------------------------------------------------------
+           SETMSG   MSG=BATCHBUCKETS         LOG:  NUMBER OF BUCKETS
+           TAFCONVC SRC=THTSHSTA_BUC,MF=(E,CONVC)
+           ST       R0,@NUMBER
+           ST       R1,NUML
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@NUMBER,$1L=NUML,MF=(E,PRINT)
+*----------------------------------------------------------------------
+*          NUMBER   OF USED BUCKETS
+*----------------------------------------------------------------------
+           SETMSG   MSG=BATCHBUCKUSED        LOG:  NUM OF USED BUCKETS
+           TAFCONVC SRC=THTSHSTA_USE,MF=(E,CONVC)
+           ST       R0,@NUMBER
+           ST       R1,NUML
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@NUMBER,$1L=NUML,MF=(E,PRINT)
+*----------------------------------------------------------------------
+*          NUMBER   OF FREE BUCKETS
+*----------------------------------------------------------------------
+           SETMSG   MSG=BATCHBUCKFREE        LOG:  NUM OF FREE BUCKETS
+           TAFCONVC SRC=THTSHSTA_FRE,MF=(E,CONVC)
+           ST       R0,@NUMBER
+           ST       R1,NUML
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@NUMBER,$1L=NUML,MF=(E,PRINT)
+*----------------------------------------------------------------------
+*          SIZE OF  BUCKET
+*----------------------------------------------------------------------
+           SETMSG   MSG=BATCHBUCKSIZE        LOG:  SIZE OF BUCKETS
+           TAFCONVC SRC=THTSHSTA_SBU,MF=(E,CONVC)
+           ST       R0,@NUMBER
+           ST       R1,NUML
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@NUMBER,$1L=NUML,MF=(E,PRINT)
+*----------------------------------------------------------------------
+*          SIZE OF  KEY/VALUE FIELD
+*----------------------------------------------------------------------
+           SETMSG   MSG=BATCHKVALSIZE        LOG:  SIZE OF KEY/VALUE
+           TAFCONVC SRC=THTSHSTA_SVA,MF=(E,CONVC)
+           ST       R0,@NUMBER
+           ST       R1,NUML
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@NUMBER,$1L=NUML,MF=(E,PRINT)
+*----------------------------------------------------------------------
+*          NUMBER   OF TABLES
+*----------------------------------------------------------------------
+           SETMSG   MSG=BATCHTABLES          LOG:  MAX NUMBER OF TABLES
+           TAFCONVC SRC=THTSHSTA_TBL,MF=(E,CONVC)
+           ST       R0,@NUMBER
+           ST       R1,NUML
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@NUMBER,$1L=NUML,MF=(E,PRINT)
+*----------------------------------------------------------------------
+*          NUMBER   OF USED TABLES
+*----------------------------------------------------------------------
+           SETMSG   MSG=BATCHTBLUSED         LOG:  NUMBER USED TABLES
+           TAFCONVC SRC=THTSHSTA_TBU,MF=(E,CONVC)
+           ST       R0,@NUMBER
+           ST       R1,NUML
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@NUMBER,$1L=NUML,MF=(E,PRINT)
+*----------------------------------------------------------------------
+*          NUMBER   OF FREE TABLES
+*----------------------------------------------------------------------
+           SETMSG   MSG=BATCHTBLFREE         LOG:  NUMBER FREE TABLES
+           TAFCONVC SRC=THTSHSTA_TBF,MF=(E,CONVC)
+           ST       R0,@NUMBER
+           ST       R1,NUML
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@NUMBER,$1L=NUML,MF=(E,PRINT)
+*----------------------------------------------------------------------
+*          LOAD     FACTOR
+*----------------------------------------------------------------------
+           SETMSG   MSG=BATCHLFACTOR         LOG:  LOAD FACTOR
+           TAFCONVC SRC=THTSHSTA_LOD,MF=(E,CONVC)
+           ST       R0,@NUMBER
+           ST       R1,NUML
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@NUMBER,$1L=NUML,MF=(E,PRINT)
+           STORAGE  RELEASE,ADDR=(R6),LENGTH=THTSHSTARL
+           DROP     R6
+           J        GETSYSIN                       GET NEXT SYSIN
+*----------------------------------------------------------------------
+*        DISPLAY A BUCKET USAGE MAP
+*----------------------------------------------------------------------
+SHOWMAP00  DS       0H
+           SETMSG   MSG=BATCHSHOWMAP         LOG:  PROCESSING SHOW MAP
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           LR       R1,R9                    R1:   @THTCOMM
+           L        R15,@THTSHMAP            R15:  @THTSHMAP
+           BALR     R14,R15                        GET USAGE BITMAP
+           L        R6,@THTRETURN
+           USING    THTSHMAPR,R6       ADDRESS THTSHMAP RETURN AREA
+           L        R8,THTSHMAPL        R8: LENGTH RETURN AREA HEADER
+           LR       R2,R6                R2: BEGIN RETURN AREA
+           LR       R5,R2                 R5: BEGIN RET FOR STOR REL
+           AHI      R2,THTSHMAPRL         R2: BEGIN VALUE
+           L        R6,THTSHMAPN          R6: LENGTH RETURN VALUE
+           DROP     R6
+           CFI      R6,60                     LONGER THAN  60 BYTES?
+           JNH      SHOWMAP03                 YES, CONTINUE
+           IILF     R15,60                    R15: 60
+           LR       R7,R6                     R7: LENGTH VALUE
+           SR       R6,R6                     R6: ZERO
+           DLR      R6,R15                    R7: NUM OF 60B LINES
+SHOWMAP02  DS       0H                     R6:  LENGTH OF LAST LINE IF
+           XC       TEMPTXT,TEMPTXT             <60B
+           MVC      TEMPTXT+1(60),0(R2)
+           PUT      (R3),TEMPTXT              PRINT VALUE
+           LA       R2,60(,R2)                MOVE POINTER +60
+           JCT      R7,SHOWMAP02              DO FOR ALL RECORDS
+SHOWMAP03  DS       0H
+           CFI      R6,0
+           JNH      SHOWMAP04
+           XC       TEMPTXT,TEMPTXT
+           AHI      R6,-1
+           EX       R6,TEMPTXTMVC2
+           PUT      (R3),TEMPTXT
+SHOWMAP04  DS       0H
+           STORAGE  RELEASE,ADDR=(R5),LENGTH=(R8)
+           J        GETSYSIN
+*----------------------------------------------------------------------
+*          CREATE TABLE CONTROL BLOCK
+*----------------------------------------------------------------------
+CREATE00   DS       0H
+           SETMSG   MSG=BATCHCREATE          LOG:  PROCESSING CREATE
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           LR       R1,R9                    R1:   @THTCOMM
+           L        R15,@THTCREAT            R15:  @THTCREAT
+           MVC      MODULE,=C'THTCREAT'
+           BALR     R14,R15                        CREATE TABLE
+           CIJNE    R15,0,ERROR02                  IF RC<>0 THEN ERROR
+           SETMSG   MSG=BATCHCREATED         LOG:  CREATED SUCCESSFUL
+           LLC      R2,TBLNAMEL
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT),+
+               $2=@TBLNAME,$2L=(R2)
+           J        GETSYSIN                       GET NEXT SYSIN
+*----------------------------------------------------------------------
+*          INSERT RECORD INTO TABLE
+*----------------------------------------------------------------------
+INSERT00   DS       0H
+           SETMSG   MSG=BATCHINSERT          LOG:  PROCESSING INSERT
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           L        R15,@THTINSRT            R15:  @THTINSRT
+           LR       R1,R9                    R1:   @THTCOMM
+           MVC      MODULE,=C'THTINSRT'
+           BALR     R14,R15                        INSERT KEY/VALUE
+           LR       R5,R15
+           TM       FLAG,TRACE                     TRACE REQUIRED?
+           JZ       INSERT01                       NO, CONTINUE
+           SETMSG   MSG=BATCHTABLE           LOG:  TABLE : ...
+           LLC      R3,TBLNAMEL              R3:   LENGTH TABLENAME
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@TBLNAME,$1L=(R3),           +
+               MF=(E,PRINT)
+           SETMSG   MSG=BATCHKEY             LOG:  KEY   : ...
+           LLC      R3,KEYL                  R3:   LENGTH KEY
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@KEY,$1L=(R3),MF=(E,PRINT)
+           SETMSG   MSG=BATCHHASH1           LOG:  HASH OF TABLE
+           TAFCONVH SRC=TBLHASH,SRCL=4,TGT=RCCHAR,MF=(E,CONV)
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=RCCHAR,MF=(E,PRINT)
+           SETMSG   MSG=BATCHHASH2           LOG:  HASH OF KEY
+           TAFCONVH SRC=KEYHASH,SRCL=4,TGT=RCCHAR,MF=(E,CONV)
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=RCCHAR,MF=(E,PRINT)
+INSERT01   DS       0H
+           LR       R15,R5
+           CIJNE    R15,0,ERROR02                  IF RC<>0 THEN ERROR
+           SETMSG   MSG=BATCHINSERTED        LOG:  INSERTED SUCCESSFUL
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           J        GETSYSIN                       GET NEXT SYSIN
+*----------------------------------------------------------------------
+*          PUT RECORD INTO FIFO
+*----------------------------------------------------------------------
+PUT00      DS       0H
+           SETMSG   MSG=BATCHPUT             LOG:  PROCESSING PUT
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           L        R15,@THTPUT00            R15:  @THTPUT00
+           LR       R1,R9                    R1:   @THTCOMM
+           MVC      MODULE,=C'THTPUT00'
+           BALR     R14,R15                        INSERT KEY/VALUE
+           LR       R5,R15
+           TM       FLAG,TRACE                     TRACE REQUIRED?
+           JZ       PUT01                          NO, CONTINUE
+           SETMSG   MSG=BATCHTABLE           LOG:  TABLE : ...
+           LLC      R3,TBLNAMEL              R3:   LENGTH TABLENAME
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@TBLNAME,$1L=(R3),           +
+               MF=(E,PRINT)
+           SETMSG   MSG=BATCHKEY             LOG:  KEY   : ...
+           LLC      R3,KEYL                  R3:   LENGTH KEY
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@KEY,$1L=(R3),MF=(E,PRINT)
+           SETMSG   MSG=BATCHHASH1           LOG:  HASH OF TABLE
+           TAFCONVH SRC=TBLHASH,SRCL=4,TGT=RCCHAR,MF=(E,CONV)
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=RCCHAR,MF=(E,PRINT)
+           SETMSG   MSG=BATCHHASH2           LOG:  HASH OF KEY
+           TAFCONVH SRC=KEYHASH,SRCL=4,TGT=RCCHAR,MF=(E,CONV)
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=RCCHAR,MF=(E,PRINT)
+PUT01      DS       0H
+           LR       R15,R5
+           CIJNE    R15,0,ERROR02                  IF RC<>0 THEN ERROR
+           SETMSG   MSG=BATCHPUTED           LOG:  PUT SUCCESSFUL
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           J        GETSYSIN                       GET NEXT SYSIN
+*----------------------------------------------------------------------
+*          UPDATE RECORD IN TABLE
+*----------------------------------------------------------------------
+UPDATE00   DS       0H
+           SETMSG   MSG=BATCHUPDATE          LOG:  PROCESSING UPDATE
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           LR       R1,R9                    R1:   @THTCOMM
+           L        R15,@THTUPDAT            R15:  @THTUPDAT
+           MVC      MODULE,=C'THTUPDAT'
+           BALR     R14,R15                        UPDATE KEY/VALUE
+           LR       R5,R15
+           TM       FLAG,TRACE                     TRACE REQUIRED?
+           JZ       UPDATE01                       NO, CONTINUE
+           SETMSG   MSG=BATCHTABLE           LOG:  TABLE : ...
+           LLC      R3,TBLNAMEL              R3:   LENGTH TABLENAME
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@TBLNAME,$1L=(R3),           +
+               MF=(E,PRINT)
+           SETMSG   MSG=BATCHKEY             LOG:  KEY   : ...
+           LLC      R3,KEYL                  R3:   LENGTH KEY
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@KEY,$1L=(R3),MF=(E,PRINT)
+           SETMSG   MSG=BATCHHASH1           LOG:  HASH OF TABLE
+           TAFCONVH SRC=TBLHASH,SRCL=4,TGT=RCCHAR,MF=(E,CONV)
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=RCCHAR,MF=(E,PRINT)
+           SETMSG   MSG=BATCHHASH2           LOG:  HASH OF KEY
+           TAFCONVH SRC=KEYHASH,SRCL=4,TGT=RCCHAR,MF=(E,CONV)
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=RCCHAR,MF=(E,PRINT)
+UPDATE01   DS       0H
+           LR       R15,R5
+           CIJNE    R15,0,ERROR02                  IF RC<>0 THEN ERROR
+           SETMSG   MSG=BATCHUPDATED         LOG:  UPDATED SUCCESSFUL
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           J        GETSYSIN                       GET NEXT SYSIN
+*----------------------------------------------------------------------
+*          DELETE RECORD IN TABLE
+*----------------------------------------------------------------------
+DELETE00   DS       0H
+           SETMSG   MSG=BATCHDELETE          LOG:  PROCESSING DELETE
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           LOAD     EP=THTDELET
+           ST       R0,@THTDELET
+           LR       R1,R9                    R1:   @THTCOMM
+           L        R15,@THTDELET            R15:  @THTDELET
+           MVC      MODULE,=C'THTDELET'
+           BALR     R14,R15                        DELETE KEY/VALUE
+           LR       R5,R15
+           TM       FLAG,TRACE                     TRACE REQUIRED?
+           JZ       DELETE01                       NO, CONTINUE
+           SETMSG   MSG=BATCHTABLE           LOG:  TABLE : ...
+           LLC      R3,TBLNAMEL              R3:   LENGTH TABLENAME
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@TBLNAME,$1L=(R3),           +
+               MF=(E,PRINT)
+           SETMSG   MSG=BATCHKEY             LOG:  KEY   : ...
+           LLC      R3,KEYL                  R3:   LENGTH KEY
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@KEY,$1L=(R3),MF=(E,PRINT)
+           SETMSG   MSG=BATCHHASH1           LOG:  HASH OF TABLE
+           TAFCONVH SRC=TBLHASH,SRCL=4,TGT=RCCHAR,MF=(E,CONV)
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=RCCHAR,MF=(E,PRINT)
+           SETMSG   MSG=BATCHHASH2           LOG:  HASH OF KEY
+           TAFCONVH SRC=KEYHASH,SRCL=4,TGT=RCCHAR,MF=(E,CONV)
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=RCCHAR,MF=(E,PRINT)
+DELETE01   DS       0H
+           LR       R15,R5
+           CIJNE    R15,0,ERROR02                  IF RC<>0 THEN ERROR
+           SETMSG   MSG=BATCHDELETED         LOG:  DELETED SUCCESSFUL
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           J        GETSYSIN                       GET NEXT SYSIN
+*----------------------------------------------------------------------
+*          SELECT RECORD FROM TABLE
+*----------------------------------------------------------------------
+SELECT00   DS       0H
+           SETMSG   MSG=BATCHSELECT          LOG:  PROCESSING SELECT
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           SETMSG   MSG=BATCHTABLE           LOG:  TABLE : ...
+           LLC      R3,TBLNAMEL              R3:   LENGTH TABLENAME
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@TBLNAME,$1L=(R3),           +
+               MF=(E,PRINT)
+           SETMSG   MSG=BATCHKEY             LOG:  KEY   : ...
+           LLC      R3,KEYL                  R3:   LENGTH KEY
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@KEY,$1L=(R3),MF=(E,PRINT)
+           LLC      R0,KEYL                  R0:   LENGTH KEY
+           CIJH     R0,1,SELEC                     >1 THEN NORMAL SELEC
+           L        R15,@KEY                 R15:  @KEY
+           LLC      R15,0(,R15)              R15:  KEY
+           CIJE     R15,C'*',SELECTALL             IF * THEN SELECT ALL
+SELEC      DS       0H
+           L        R15,@THTSELEC            R15:  @THTSELEC
+           MVC      MODULE,=C'THTSELEC'
+           LR       R1,R9                    R1.   @THTCOMM
+           BALR     R14,R15                        SELECT VALUE FOR KEY
+           LR       R5,R15
+*BAUSTELLE ********
+*       IF VALUE    > LRECL - MULTI LINES
+*BAUSTELLE ********
+           TM       FLAG,TRACE                     TRACE REQUIRED?
+           JZ       SELECT01                       NO, CONTINUE
+           SETMSG   MSG=BATCHHASH1           LOG:  HASH OF TABLE
+           TAFCONVH SRC=TBLHASH,SRCL=4,TGT=RCCHAR,MF=(E,CONV)
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=RCCHAR,MF=(E,PRINT)
+           SETMSG   MSG=BATCHHASH2           LOG:  HASH OF KEY
+           TAFCONVH SRC=KEYHASH,SRCL=4,TGT=RCCHAR,MF=(E,CONV)
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=RCCHAR,MF=(E,PRINT)
+SELECT01   DS       0H
+           LR       R15,R5
+           CIJNE    R15,0,ERROR02                  IF RC<>0 THEN ERROR
+           L        R7,@THTRETURN            R7:   @RETURN_AREA
+           LA       R8,#ARRAYL(,R7)          R8:   ELEMENT INDX 0
+           USING    #ARRAYEL,R8                    ADDRESS ELEMENT
+           L        R3,#ARRAYELML            R3:   LENGTH KEY
+           L        R2,#ARRAYELM@            R2:   @KEY
+           SETMSG   MSG=BATCHVALUE           LOG:  VALUE : ...
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=(R2),$1L=(R3),MF=(E,PRINT)
+           FREE     R7                             FREE ARRAY
+           SETMSG   MSG=BATCHSELECTED        LOG:  SELECTED SUCCESSFUL
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           J        GETSYSIN                       GET NEXT SYSIN
+*----------------------------------------------------------------------
+*          SELECT * FROM TABLE
+*----------------------------------------------------------------------
+SELECTALL  DS       0H
+           L        R15,@THTSELES            R15:  @THTSELES
+           MVC      MODULE,=C'THTSELES'
+           LR       R1,R9                    R1:   @THTCOMM
+           BALR     R14,R15                        SELECT *
+           CIJNE    R15,0,ERROR02                  IF RC<>0 THEN ERROR
+           L        R7,@THTRETURN            R7:   @RETURN_AREA
+           USING    #ARRAY,R7                      ADDRESS THE ARRAY
+           L        R6,#ARRAYELM             R6:   NUMBER ELEMENTS
+           SRL      R6,1                           / 2
+           DROP     R7
+           LA       R8,#ARRAYL(,R7)          R8:   ELEMENT INDX 0
+           USING    #ARRAYEL,R8                    ADDRESS ELEMENT
+ALLRECORDS DS       0H
+           L        R3,#ARRAYELML            R3:   LENGTH KEY
+           L        R2,#ARRAYELM@            R2:   @KEY
+           LA       R8,#ARRAYELL(,R8)        R8:   NEXT ELEMENT
+           L        R5,#ARRAYELML            R5:   LENGTH VALUE
+           L        R4,#ARRAYELM@            R4:   @VALUE
+           LA       R8,#ARRAYELL(,R8)        R8:   NEXT ELEMENT
+           SETMSG   MSG=BATCHKEY             LOG:  VALUE : ...
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=(R2),$1L=(R3),MF=(E,PRINT)
+           SETMSG   MSG=BATCHVALUE           LOG:  VALUE : ...
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=(R4),$1L=(R5),MF=(E,PRINT)
+           JCT      R6,ALLRECORDS                  GET THEM ALL
+           FREE     R7                             FREE ARRAY
+           SETMSG   MSG=BATCHSELECTED        LOG:  SELECTED SUCCESSFUL
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           J        GETSYSIN                       GET NEXT SYSIN
+*----------------------------------------------------------------------
+*          GET RECORD FROM FIFO QUEUE
+*----------------------------------------------------------------------
+GET00      DS       0H
+           SETMSG   MSG=BATCHGET             LOG:  PROCESSING GET
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           SETMSG   MSG=BATCHTABLE           LOG:  TABLE : ...
+           LLC      R3,TBLNAMEL              R3:   LENGTH TABLENAME
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@TBLNAME,$1L=(R3),           +
+               MF=(E,PRINT)
+           LR       R1,R9                    R1:   @THTCOMM
+           L        R15,@THTGET00            R15:  @THTGET00
+           MVC      MODULE,=C'THTGET00'
+           BALR     R14,R15                        SELECT VALUE FOR KEY
+           LR       R5,R15
+*BAUSTELLE ********
+*       IF VALUE    > LRECL - MULTI LINES
+*BAUSTELLE ********
+           TM       FLAG,TRACE                     TRACE REQUIRED?
+           JZ       GET01                          NO, CONTINUE
+           SETMSG   MSG=BATCHKEY             LOG:  KEY   : ...
+           LLC      R3,KEYL                  R3:   LENGTH KEY
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@KEY,$1L=(R3),MF=(E,PRINT)
+           SETMSG   MSG=BATCHHASH1           LOG:  HASH OF TABLE
+           TAFCONVH SRC=TBLHASH,SRCL=4,TGT=RCCHAR,MF=(E,CONV)
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=RCCHAR,MF=(E,PRINT)
+           SETMSG   MSG=BATCHHASH2           LOG:  HASH OF KEY
+           TAFCONVH SRC=KEYHASH,SRCL=4,TGT=RCCHAR,MF=(E,CONV)
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=RCCHAR,MF=(E,PRINT)
+GET01      DS       0H
+           LR       R15,R5
+           CIJNE    R15,0,ERROR02                  IF RC<>0 THEN ERROR
+           L        R2,@VALUE                R2:   @VALUE
+           L        R3,VALUEL                R3:   LENGTH VALUE
+           SETMSG   MSG=BATCHVALUE           LOG:  VALUE : ...
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=(R2),$1L=(R3),MF=(E,PRINT)
+           SETMSG   MSG=BATCHGETED           LOG:  GET SUCCESSFUL
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           L        R7,@THTRETURN            R7:   @RETURN OBJECT
+           FREE     R7                             FREE STORAGE
+           J        GETSYSIN                       GET NEXT SYSIN
+*----------------------------------------------------------------------
+*          DROP TABLE CONTROL BLOCK
+*----------------------------------------------------------------------
+DROP00     DS       0H
+           SETMSG   MSG=BATCHDROP            LOG:  PROCESSING DROP
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           L        R15,@THTDROP0            R15:  @THTDROP0
+           LR       R1,R9                    R1:   @THTCOMM
+           MVC      MODULE,=C'THTDROP0'
+           BALR     R14,R15                        DROP TABLE
+           CIJNE    R15,0,ERROR02                  IF RC<>0 THEN ERROR
+           SETMSG   MSG=BATCHDROPPED         LOG:  DROPPED SUCCESSFUL
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           J        GETSYSIN                       GET NEXT SYSIN
+*----------------------------------------------------------------------
+*          PURGE RECORDS FROM TABLE
+*----------------------------------------------------------------------
+PURGE00    DS       0H
+           SETMSG   MSG=BATCHPURGE           LOG:  PROCESSING PURGE
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           L        R15,@THTPURG0            R15:  @THTPURGE
+           LR       R1,R9                    R1:   @THTCOMM
+           MVC      MODULE,=C'THTPURG0'
+           BALR     R14,R15                        DROP TABLE
+           CIJNE    R15,0,ERROR02                  IF RC<>0 THEN ERROR
+           SETMSG   MSG=BATCHPURGED          LOG:  PURGED SUCCESSFUL
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           J        GETSYSIN                       GET NEXT SYSIN
+*----------------------------------------------------------------------
+*          INSERT WITH UPDATE
+*----------------------------------------------------------------------
+MERGE00    DS       0H
+           SETMSG   MSG=BATCHMERGE           LOG:  PROCESSING MERGE
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           MVC      MODULE,=C'THTMERG0'
+           L        R15,@THTMERG0            R15:  @THTMERG0
+           LR       R1,R9                    R1:   @THTCOMM
+           BALR     R14,R15                        MERGE KEY/VALUE
+           LR       R5,R15
+           TM       FLAG,TRACE                     TRACE REQUIRED?
+           JZ       MERGE01                        NO, CONTINUE
+           SETMSG   MSG=BATCHTABLE           LOG:  TABLE : ...
+           LLC      R3,TBLNAMEL              R3:   LENGTH TABLENAME
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@TBLNAME,$1L=(R3),           +
+               MF=(E,PRINT)
+           SETMSG   MSG=BATCHKEY             LOG:  KEY   : ...
+           LLC      R3,KEYL                  R3:   LENGTH KEY
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@KEY,$1L=(R3),MF=(E,PRINT)
+           SETMSG   MSG=BATCHHASH1           LOG:  HASH OF TABLE
+           TAFCONVH SRC=TBLHASH,SRCL=4,TGT=RCCHAR,MF=(E,CONV)
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=RCCHAR,MF=(E,PRINT)
+           SETMSG   MSG=BATCHHASH2           LOG:  HASH OF KEY
+           TAFCONVH SRC=KEYHASH,SRCL=4,TGT=RCCHAR,MF=(E,CONV)
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=RCCHAR,MF=(E,PRINT)
+MERGE01    DS       0H
+           LR       R15,R5
+           CIJNE    R15,0,ERROR02                  IF RC<>0 THEN ERROR
+           SETMSG   MSG=BATCHINSERTED        LOG:  INSERTED SUCCESSFUL
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           J        GETSYSIN                       GET NEXT SYSIN
+*----------------------------------------------------------------------
+*          DUMP THE CONTENT OF A LINEAR DATASET
+*----------------------------------------------------------------------
+DUMP00     DS       0H
+           SETMSG   MSG=BATCHDUMP
+           TAFPRINT DCB=@LOG,TEXT=@MSG,$1=@LINE,$1L=LINEL,MF=(E,PRINT)
+           MVC      SPRINTTXT(255),BLANK255
+           MVC      SPRINTTXT(L'DUMPCOL1),DUMPCOL1
+           MVC      SPRINTTXT+45(16),DUMPCOL2
+           L        R3,@LOG
+           PUT      (R3),SPRINTTXT
+           L        R2,@HT
+           L        R8,HTSIZE
+           XC       NUMBER,NUMBER
+DUMP04     DS       0H
+           MVC      SPRINTTXT(L'BLANK255),BLANK255
+           XC       TEMPTXT(L'TEMPTXT),TEMPTXT
+           MVC      TEMPTXT(4),NUMBER
+           CHI      R8,16
+           JH       DUMP05
+           AHI      R8,-1
+           EX       R8,TEMPTXTMVC
+           CLC      TEMPTXT+4(16),NULL16
+           JE       DUMP07
+           AHI      R8,1
+           TAFCONVH SRC=TEMPTXT,SRCL=20,TGT=SPRINTTXT,MF=(E,CONV)
+           MVC      SPRINTTXT+45(16),TEMPTXT+4
+           MVC      TEMPTXT(8),SPRINTTXT
+           MVI      TEMPTXT+8,C' '
+           MVC      TEMPTXT+9(8),SPRINTTXT+8
+           MVI      TEMPTXT+17,C' '
+           MVC      TEMPTXT+18(8),SPRINTTXT+16
+           MVI      TEMPTXT+26,C' '
+           MVC      TEMPTXT+27(8),SPRINTTXT+24
+           MVI      TEMPTXT+35,C' '
+           MVC      TEMPTXT+36(8),SPRINTTXT+32
+           MVC      SPRINTTXT(45),TEMPTXT
+           MVI      SPRINTTXT+44,C' '
+           PUT      (R3),SPRINTTXT
+           J        DUMP07
+DUMP05     DS       0H
+           MVC      TEMPTXT+4(16),0(R2)
+           CLC      TEMPTXT+4(16),NULL16
+           JE       DUMP06
+           TAFCONVH SRC=TEMPTXT,SRCL=20,TGT=SPRINTTXT,MF=(E,CONV)
+           MVC      SPRINTTXT+46(16),TEMPTXT+4
+           MVC      TEMPTXT(8),SPRINTTXT
+           MVI      TEMPTXT+8,C' '
+           MVC      TEMPTXT+9(8),SPRINTTXT+8
+           MVI      TEMPTXT+17,C' '
+           MVC      TEMPTXT+18(8),SPRINTTXT+16
+           MVI      TEMPTXT+26,C' '
+           MVC      TEMPTXT+27(8),SPRINTTXT+24
+           MVI      TEMPTXT+35,C' '
+           MVC      TEMPTXT+36(8),SPRINTTXT+32
+           MVI      TEMPTXT+44,C' '
+           MVC      SPRINTTXT(45),TEMPTXT
+           PUT      (R3),SPRINTTXT
+DUMP06     DS       0H
+           ASI      NUMBER,16
+           AHI      R8,-16
+           AHI      R2,16
+           J        DUMP04
+DUMP07     DS       0H
+           J        GETSYSIN                       GET NEXT SYSIN
+***********************************************************************
+* CONSTANTS
+***********************************************************************
+CONSTANTS  DS       0F
+           LTORG
+@MESSAGES  DC       V(TAFMESSG)                    AUTOMAT MESSAGES
+@TAFCONVH  DC       V(TAFCONVH)                    CONVERT TO HEX CHARS
+@TAFCONVC  DC       V(TAFCONVC)                    CONVERT TO CHARS
+@TAFLENGT  DC       V(TAFLENGT)                    CONVERT TO CHARS
+@TAFPRINT  DC       V(TAFPRINT)                    PRINT MESSAGES
+@THTCREAT  DC       V(THTCREAT)
+@THTDROP0  DC       V(THTDROP0)
+@THTPURG0  DC       V(THTPURG0)
+@THTINSRT  DC       V(THTINSRT)
+@THTMERG0  DC       V(THTMERG0)
+@THTUPDAT  DC       V(THTUPDAT)
+@THTSELEC  DC       V(THTSELEC)
+@THTSELES  DC       V(THTSELES)
+@THTDELET  DC       V(THTDELET)
+@THTINIT0  DC       V(THTINIT0)
+@THTPARSR  DC       V(THTPARSR)
+@THTSHMAP  DC       V(THTSHMAP)
+@THTSHSTA  DC       V(THTSHSTA)
+@THTSHTAB  DC       V(THTSHTAB)
+@THTPUT00  DC       V(THTPUT00)
+@THTGET00  DC       V(THTGET00)
+TEMPTXTMVC MVC      TEMPTXT+4(0),0(R2)
+TEMPTXTMVC2  MVC    TEMPTXT+1(0),0(R2)
+LOGDCB     DCB      MACRF=PM,DDNAME=LOG,DSORG=PS,BLKSIZE=255,          +
+               RECFM=FA,LRECL=255,DCBE=LOGDCBE                          
+LOGDCBE    DCBE     RMODE31=BUFF                                        
+SYSINDCB   DCB      MACRF=GL,DDNAME=SYSIN,DSORG=PS,                    +
+               RECFM=FB,LRECL=80,DCBE=SYSINDCBE
+SYSINDCBE  DCBE     RMODE31=BUFF,EODAD=RETURN                           
+NULL16     DC       XL16'00'
+DEFLTDDN   DC       CL8'TABLE   '
+DUMPCOL1   DC       CL44'RBA      0_-_-_3_ 4_-_-_7_ 8_-_-_B_ C_-_-_F_'
+DUMPCOL2   DC       CL16'0---4---8---C---'
+EDITMASK   DC       XL16'40202020202020202020202020202020'
+BLANK255   DC       CL255' '
+BATCH      DC       C'THTBATCH'
+QMARK      DC       X'7D'
+PARML      DC       F'80'
+***********************************************************************
+* WORKAREA
+***********************************************************************
+WORKAREA   DSECT    ,                              MY WORKAREA
+SAVEAREA   DS       18F                            MY SAVEAREA
+@THTCOMM   DS       A                              PTR TO THTCOMM AREA
+@LOG       DS       A                              PTR TO LOG
+@MSG       DS       A                              PTR TO MESSAGE
+@SYSIN     DS       A                              PTR TO SYSIN
+@HT        DS       A                              PTR TO HASHTBL
+@NUMBER    DS       A                              PTR TO EBCDIC NUMBER
+@LINE      DS       A                              PTR TO EBCDIC LINE
+NUML       DS       F                              LENGTH EBCDIC NUMBER
+LINEL      DS       F                              LENGTH EBCDIC LINE
+RC         DS       F                              RETURN CODE
+RSN        DS       F                              REASON CODE
+MAXRC      DS       F                              MAXIMUM RETURN CODE
+NUMBER     DS       F
+LINECOUNT  DS       F                              NUM OF SYSIN LINES
+HTTOKEN    DS       F                              DIV TOKEN
+HTSIZE4K   DS       F                              SIZE HASHTBL 4K BLK
+HTSIZE     DS       F                              SIZE HASHTBL BYTES
+SAVE       DIV      SAVE,MF=L
+IDENT      DIV      IDENTIFY,MF=L
+ACCESS     DIV      ACCESS,MF=L
+MAP        DIV      MAP,MF=L
+UNMAP      DIV      UNMAP,MF=L
+UNACCESS   DIV      UNACCESS,MF=L
+UNIDENT    DIV      UNIDENTIFY,MF=L
+DIVMODE    DS       CL8                            DIV MACRO MODE
+RCCHAR     DS       CL8                            RC IN EBCDIC
+RSNCHAR    DS       CL8                            RSN IN EBCDIC
+LINE       DS       CL8                            LINECOUNT IN EBCDIC
+MODULE     DS       CL8
+DIVDDN     DS       XL1                            LENGTH DIV DDNAME
+DIVLDS     DS       CL8                            DIV DDNAME
+TEMPTXT    DS       CL80
+SPRINTTXT  DS       CL255
+FLAG       DS       XL1
+NOHTCB     EQU      B'10000000'
+TRACE      EQU      B'00001000'
+           DS       0F
+CONV       TAFCONVH MF=L                           TAFCONVH PARM LIST
+PRINT      TAFPRINT MF=L                           TAFPRINT PARM LIST
+CONVC      TAFCONVC MF=L
+LINECHAR   TAFCONVC MF=L
+WORKAREAL  EQU      *-WORKAREA
+***********************************************************************
+* DSECT'S
+***********************************************************************
+           DCBD     DSORG=QS
+           DATATYPE ,
+           THTCOMM  ,
+           THTCBLKS ,
+MESSAGES   GENMSGS  GEN=DSECT
+           END

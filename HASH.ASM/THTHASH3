@@ -1,0 +1,59 @@
+***********************************************************************
+*  DJB2 Hash Algorithm                                                *
+*                                                                     *
+*                                                                     *
+*  Entry: R1:  @THTCOMM                                               *
+*                                                                     *
+*  Exit:  R15: RC                                                     *
+*         R1 : @THTCOMM                                               *
+*                                                                     *
+* THE KEY HASH IS SAVED IN TE THTCOMM AREA AT THE FIELD KEYHASH       *
+***********************************************************************
+           TITLE    'THTHASH3 calculate Hash for key'
+           SYSSTATE ARCHLVL=2
+THTHASH3   RSECT    ,                              READ ONLY CSECT
+THTHASH3   AMODE    31
+THTHASH3   RMODE    ANY
+           BAKR     R14,0                          SAVE CALLER REGISTER
+           LR       R12,R15                  R12:  @THTHASH3
+           USING    THTHASH3,R12                   ADDRESS THTHASH3
+           USING    THTCOMM,R1                     ADDRESS THTCOMM
+           L        R3,@KEY                  R3:   PTR TO KEY
+           L        R5,TBLHASH               R5:   HASH OF TABLENAME
+           LLC      R7,KEYL                  R7:   LENGTH OF KEY
+***********************************************************************
+*          R7=KEYL  R3=@KEY
+*          for (int i = 0; i < str.length(); i++) {
+*            hash = ((hash << 5) + hash ) + str.charAt(i)
+*          }
+***********************************************************************
+NEXTCHAR   DS       0H                       R5:   HASH OF KEY
+           LR       R8,R5                    R8:   HASH
+           SLL      R8,5                     R8:   right shift by 5
+           ALR      R5,R8                    R5:   ADD TO HASH
+           LRVR     R9,R9                    R8:   REVERSE BIT ORDER
+           LLC      R9,0(,R3)                R9:   LOAD 1BYTE AT PTR
+           ALR      R5,R9                    R5:   ADD TO HASH
+           LA       R3,1(R3)                 R3:   MOVE PTR 1 BYTE
+           JCT      R7,NEXTCHAR                    DO FOR ALL CHARS
+           LLC      R0,KEYL                  R0:   LENGTH KEY
+           XR       R5,R0                    R5:   XOR WITH HASH
+           ST       R5,KEYHASH                     SAVE HASH IN THTCOMM
+           DROP     R1                             DROP THTCOMM
+***********************************************************************
+* RETURN
+***********************************************************************
+           SR       R15,R15                  R15:  RC=0
+EXIT01     DS       0H
+           PR       ,                        RETUR N TO CALLER
+***********************************************************************
+* CONSTANT
+***********************************************************************
+           LTORG    ,
+***********************************************************************
+* DSECTS
+***********************************************************************
+           YREGS    ,
+           THTCOMM  ,
+           THTCBLKS ,
+           END      THTHASH3

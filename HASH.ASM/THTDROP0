@@ -1,0 +1,146 @@
+***********************************************************************
+* DESCRIPTION:                                                        *
+* ________________________________________________________________    *
+* DELETE ALL RECORDS OF AN TABLE AND DROP THE TBCB. ______________    *
+* ________________________________________________________________    *
+* Entry:___R1: @THTCOMM___________________________________________    *
+* ________________________________________________________________    *
+* Return:__R15: RC________________________________________________    *
+* _________R1:  @THTCOMM__________________________________________    *
+***********************************************************************
+           TITLE    'THTDROP0 DELETE TABLE AND RECORDS'
+           SYSSTATE ARCHLVL=2
+THTDROP0   RSECT    ,                              REANTRANT
+THTDROP0   AMODE    31
+THTDROP0   RMODE    ANY
+*********************************************************************** 
+* REGISTER                                                              
+*********************************************************************** 
+R0         EQU      0
+R1         EQU      1                              @THTCOMM             
+R2         EQU      2                              @TBCB                
+R3         EQU      3                                                   
+R4         EQU      4                                                   
+R5         EQU      5                                                   
+R6         EQU      6                                                   
+R7         EQU      7                                                   
+R8         EQU      8                                                   
+R9         EQU      9                                                   
+R10        EQU      10                             @HTCB
+R11        EQU      11                             @WORKAREA            
+R12        EQU      12                             @THTDROP0            
+R13        EQU      13                                                  
+R14        EQU      14                                                  
+R15        EQU      15                                                  
+*********************************************************************** 
+* ENTRY                                                                 
+*********************************************************************** 
+           BAKR     R14,0
+           LR       R12,R15                  R12:  @THTDROP0
+           USING    THTDROP0,R12                   ADDRESS THTDROP0
+           LR       R13,R1                   R13:  @THTCOMM
+***********************************************************************
+* MAIN
+***********************************************************************
+           USING    THTCOMM,R13                    ADDRESS THTCOMM
+           L        R2,@MAPAREA              R2:   @HTCB
+*----------------------------------------------------------------------
+*          TEST IF HTCB EXISITS
+*----------------------------------------------------------------------
+           LR       R10,R2                   R10:  @HTCB
+           USING    THTHTCB,R10                    ADDRESS HTCB
+           IILF     R15,THTEYE               R15:  'HTCB' EYE CATCHER
+           L        R14,0(,R2)               R14:  EYE CATCHER
+           CRJNE    R15,R14,ERROR01                IF NO HTCB, ERROR
+*----------------------------------------------------------------------
+*          TEST IF TABLE EXISTS
+*----------------------------------------------------------------------
+           LA       R2,THTHTCBL(,R2)         R2:   @VECTOR OF TBCB's
+           USING    THTTBCB,R2                     ADDRESS TBCB
+           ICM      R9,B'1111',THTTBLC       R9:   NUMBER OF TABLES
+           JZ       ERROR02                        IF NO TBCB's, ERROR
+*----------------------------------------------------------------------
+*          SEARCH ALL TBCB FOR OUR TABLE
+*----------------------------------------------------------------------
+           LLC      R4,TBLNAMEL              R4:   LENGTH TABLE NAME
+           IILF     R0,THTEYE2               R0:   'TBCB' EYE CATCHER
+           L        R15,@TBLNAME             R15:  @TABLE NAME
+SRCHTABLE  L        R14,0(,R2)               R14:  TBCB EYE CATCHER
+           CRJNE    R0,R14,NEXTSLOT                IF NO TBCB,NEXT SLOT
+           LLC      R5,THTTNAML              R5:   TBLNAME LEN OF TBCB
+           CRJNE    R5,R4,NEXTTBCB                 IF NOT SAME LEN,NEXT
+           AHI      R5,-1                    R5:   DECR. LENGTH FOR CLC
+           EX       R5,TBLCLC                      FOUND OUR TBCB ?
+           JE       DELETEALL                      YES, CONTINUE
+NEXTTBCB   LA       R2,THTTBCBL(,R2)               NO, NEXT TBCB
+           JCT      R9,SRCHTABLE                   CONTINUE WHILE TBCBs
+           J        ERROR03                        TABLE NOT FOUND
+NEXTSLOT   LA       R2,THTTBCBL(,R2)         R2:   @NEXT TBCB
+           J        SRCHTABLE
+*----------------------------------------------------------------------
+*          DELETE ALL RECORDS AND DROP THE TBCB
+*----------------------------------------------------------------------
+DELETEALL  DS       0H
+*----------------------------------------------------------------------
+*          TEST IF WE HAVE USED BUCKETS IN THE TABLE
+*----------------------------------------------------------------------
+           L        R5,THTTNBUC              R0:   NUM BUCKETS IN TBL
+           CIJE     R5,0,DROP                      IF 0 THEN DROP TBL
+*----------------------------------------------------------------------
+*          DELETE THE RECORD
+*----------------------------------------------------------------------
+DELETE     L        R3,THTFBUCK              R3:   RBA FIRST_BUCKET
+           LA       R3,0(R3,R10)             R3:   @BUCKET
+           USING    THTBUCK,R3                     ADDRESS BUCKET
+           LLC      R9,THTKEYL               R9:   KEY LENGTH
+           STC      R9,KEYL                        SET IN THTCOMM
+           LA       R8,THTBUCKL(,R3)         R8:   @KEY/VALUE FIELD
+           ST       R8,@KEY                        SET @KEY IN THTCOMM
+           L        R15,@THTDELET_           R15:  @DELETE ROUTINE
+           LR       R1,R13                   R1:   @THTCOMM
+           BALR     R14,R15                        DELETE RECORD
+           JCT      R5,DELETE                      REPEAT FOR ALL BUCK.
+DROP       DS       0H
+           XC       0(THTTBCBL,R2),0(R2)           RESET TBCB OF TABLE
+           ASI      THTTBLC,-1                     DECR. NUM. TABLES
+           SR       R15,R15                  R15:  RC=0
+***********************************************************************
+* RETURN
+***********************************************************************
+EXIT01     DS       0H
+           LR       R1,R13                   R1:   @THTCOMM
+           PR       ,                              RETURN TO CALLER
+***********************************************************************
+* ERRORS
+***********************************************************************
+*----------------------------------------------------------------------
+*          NO HTCB FOUND, HASHTABLE MUST BE  INIT
+*----------------------------------------------------------------------
+ERROR01    DS       0H
+           IILF     R15,#NO_HTCB
+           J        EXIT01
+*----------------------------------------------------------------------
+*          NO TABLES FOUND
+*----------------------------------------------------------------------
+ERROR02    DS       0H
+           IILF     R15,#NO_TABLES
+           J        EXIT01
+*----------------------------------------------------------------------
+*          TABLE NOT FOUND
+*----------------------------------------------------------------------
+ERROR03    DS       0H
+           IILF     R15,#TABLE_NOT_FOUND
+           J        EXIT01
+***********************************************************************
+* CONSTANTS
+***********************************************************************
+@THTDELET_ DC       V(THTDELET)
+TBLCLC     CLC      THTTNAME(0),0(R15)
+           LTORG
+***********************************************************************
+* DSECTS
+***********************************************************************
+           DATATYPE ,                              DATATYPES MAPPING
+           THTCOMM  ,                              THT COMMAREA
+           THTCBLKS ,                              THT CONTROL BLOCKS
+           END      THTDROP0

@@ -1,0 +1,108 @@
+                   MACRO
+&LABEL             THTCBLKS
+*----------------------------------------------------------------------
+* HTCB (Hash Table Control Block)
+*
+*
+*----------------------------------------------------------------------
+THTHTCB            DSECT
+THTHBEC            DS  CL4          Eye Catcher
+THTEYE             EQU C'HTCB'      HTCB Eye Catcher
+THTBSIZE           DS  F            Bucket Size
+THTVSIZE           DS  F            Size Value Field
+THTBUCKU           DS  F            Buckets in Use
+THTBUCKF           DS  F            free Buckets
+THTBUCKC           DS  F            Number of Buckets
+THTCOLLS           DS  F            Collisions
+THTTBLC            DS  F            table count
+THTTBCBS           DS  F            size TBCB area
+THTBUCKS           DS  F            size bucket area
+@THTBUCK           DS  A            RBA to begin bucket area
+@THTBUCKE          DS  A            RBA to end bucket area
+THTHTCBL           EQU *-THTHTCB
+                   SPACE
+*----------------------------------------------------------------------
+* TBCB (Table Control Block)
+*
+*----------------------------------------------------------------------
+THTTBCB            DSECT
+THTTBEC            DS  CL4           Eye Catcher
+THTEYE2            EQU C'TBCB'       TBCB Eye Catcher
+THTTID             DS  F             Table ID
+THTFBUCK           DS  F             RBA of first Bucket of Table
+THTLBUCK           DS  F             RBA of last Bucket of Table
+THTTHASH           DS  F             Hash of Table Name
+THTTNBUC           DS  F             number of buckets in table
+THTTNAML           DS  XL1           Length of Table Name
+THTTNAME           DS  CL(THTTNAMEL) Table Name
+THTTNAMEL          EQU 23
+THTTBCBL           EQU *-THTTBCB
+                   SPACE
+*----------------------------------------------------------------------
+* Bucket Header
+*
+*----------------------------------------------------------------------
+THTBUCK            DSECT
+THTBTID            DS  F             Table ID to wich Bucket belongs
+THTBUCKP           DS  F             prev Bucket on Chain for Table
+THTBUCKN           DS  F             next Bucket on Chain for Table
+THTVALL            DS  F             Length of Value
+THTKEYL            DS  XL1           Length of Key
+THTBUCKL           EQU *-THTBUCK     Size Bucket Header
+THTKVSEP           EQU C':'          key : value seperator
+                   SPACE
+*----------------------------------------------------------------------
+* THTSELEC/THTSELES Return Area
+*
+*----------------------------------------------------------------------
+THTSELER           DSECT
+THTSELEL           DS  F             length of return storage area
+THTSVALN           DS  F             number of returned bucket pointer
+THTSELEHL          EQU *-THTSELER    Size THTSELER return area header
+*
+THTSBUCK           DSECT
+THTSBUCKA          DS  A             Pointer to Bucket
+THTSBUCKL          EQU *-THTSBUCK    length of 1 returned field
+                   SPACE
+*----------------------------------------------------------------------
+* THTSHMAP Return Area Header
+*
+*----------------------------------------------------------------------
+THTSHMAPR          DSECT
+THTSHMAPL          DS  F             length of return storage area
+THTSHMAPN          DS  F             length of returned value
+THTSHMAPRL         EQU *-THTSHMAPR   Size THTSELER return area
+                   SPACE
+*----------------------------------------------------------------------
+* THTSHTAB Return Area Header
+*
+*----------------------------------------------------------------------
+THTSHTABR          DSECT
+THTSHTABL          DS  F             length of return storage area
+THTSHTABN          DS  F             number of returned tables
+THTSHTABT          EQU 11            length of each table name entry
+THTSHTABRL         EQU *-THTSHTABR   Size THTSELER return area
+                   SPACE
+*----------------------------------------------------------------------
+* THTSHSTA Return Area
+*
+*----------------------------------------------------------------------
+THTSHSTAR          DSECT
+THTSHSTA_BUC       DS  F             number of buckets
+THTSHSTA_USE       DS  F             number of buckets in use
+THTSHSTA_FRE       DS  F             number of free buckets
+THTSHSTA_TBL       DS  F             number of table control blocks
+THTSHSTA_COL       DS  F             number of collisions
+THTSHSTA_LOD       DS  F             load factor of hashtable
+THTSHSTA_EFF       DS  F             efficiency of hashtable
+THTSHSTA_SBU       DS  F             size of buckets
+THTSHSTA_SVA       DS  F             size of key/value field
+THTSHSTARL         EQU *-THTSHSTAR   Size THTSELER return area
+                   SPACE
+*----------------------------------------------------------------------
+* HASHING
+*
+*----------------------------------------------------------------------
+THTTBHAS           EQU X'CC9E2D51'   Table Hash Salt
+THTTBHAS2          EQU X'1B873593'   Table Hash Salt
+                   MEND

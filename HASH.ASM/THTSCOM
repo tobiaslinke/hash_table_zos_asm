@@ -1,0 +1,528 @@
+*********************************************************************** 
+* DESCRIPTION:                                                        * 
+* _________________________________________________________________   * 
+* REXX SUBCOMMAND ROUTINE TO ACCESS HASH TABLE_____________________   * 
+* _________________________________________________________________   * 
+* ENTRY: R1: @COMMAND______________________________________________   * 
+* _______R0:_LENGTH OF COMMAND_____________________________________   * 
+* _________________________________________________________________   * 
+*********************************************************************** 
+           TITLE    'THTSCOM REXX THT SUBCOMMAND ROUTINE'               
+           SYSSTATE ARCHLVL=2                                           
+THTSCOM    CSECT    ,                              REANTRENT            
+THTSCOM    AMODE    31                                                  
+THTSCOM    RMODE    ANY                                                 
+*********************************************************************** 
+* REGISTER                                                            * 
+*********************************************************************** 
+R0         EQU      0                                                   
+R1         EQU      1                                                   
+R2         EQU      2                                                   
+R3         EQU      3                              @AUTOCNST            
+R4         EQU      4                              @THTCOMM             
+R5         EQU      5                              @SUBCOM RC           
+R6         EQU      6                              @SUBCOM NAME         
+R7         EQU      7                              @SUBCOM PARM         
+R8         EQU      8                              SUBCOM  PARM LENGTH  
+R9         EQU      9                              @TAFWORK             
+R10        EQU      10                             @RC                  
+R11        EQU      11                             @WORKAREA            
+R12        EQU      12                             @THTSCOM             
+R13        EQU      13                             @SAVEAREA            
+R14        EQU      14                                                  
+R15        EQU      15                                                  
+*********************************************************************** 
+* ENTRY                                                               * 
+*********************************************************************** 
+           SAVE     (14,12)                                             
+           LR       R12,R15                                             
+           USING    THTSCOM,R12                                         
+           LR       R4,R1                    R4:   @COMMAND INPUT       
+*********************************************************************** 
+* CREATE WORKAREA                                                       
+*********************************************************************** 
+           STORAGE  OBTAIN,LENGTH=WORKAREAL,LOC=31                      
+           LR       R11,R1                                              
+           LR       R2,R11                                              
+           IILF     R3,WORKAREAL                                        
+           SR       R1,R1                                               
+           MVCL     R2,R0                                               
+           USING    WORKAREA,R11                                        
+           ST       R13,SAVEAREA+4                                      
+           LA       R15,SAVEAREA                                        
+           ST       R15,8(R13)                                          
+           LR       R13,R15                                             
+*********************************************************************** 
+* MAIN                                                                  
+*********************************************************************** 
+*---------------------------------------------------------------------- 
+*          GET PARAMETER                                                
+*                                                                       
+*          PARM1:   SUBCOMMAND IDENTIFIER                               
+*          PARM2:   COMMAND TEXT                                        
+*          PARM3:   LENGTH COMMAND TEXT                                 
+*          PARM4:   TOKEN FROM SUBCOMTB                                 
+*          PARM5:   RETURN THE RC                                       
+*---------------------------------------------------------------------- 
+           L        R6,0(,R4)                R6:   @IDENTIFIER          
+           L        R7,4(,R4)                R7:   @@PARM               
+           L        R7,0(,R7)                R7:   @PARM                
+           L        R8,8(,R4)                R8:   @PARM LENGTH         
+           L        R8,0(,R8)                R8:   PARM LENGTH          
+           L        R9,12(,R4)               R9:   @@TOKEN              
+           L        R9,0(,R9)                R9:   @TOKEN               
+           L        R9,0(,R9)                R9:   @TAFWORK             
+           L        R10,16(,R4)              R10:  @RC                  
+           USING    TAFWORK,R9                     ADDRESS TAFWORK      
+           L        R3,@AUTOCNST             R3:   @AUTOCNST            
+           USING    AUTOCNST,R3                    ADDRESS CONSTANTS    
+*---------------------------------------------------------------------- 
+*          FIND BEGIN & LENGTH OF COMMAND                               
+*---------------------------------------------------------------------- 
+           LR       R1,R7                    R6:   @COMMAND             
+           LR       R0,R8                    R0:   LENGTH COMMAND       
+           L        R15,@TAFLENGT_           R15:  @TAFLENGT            
+           BALR     R14,R15                        GET BEGIN & LENGTH   
+           CIJE     R0,0,ERROR02                   IF LEN=0 THEN ERROR  
+*---------------------------------------------------------------------- 
+*          PARSE THE COMAND TEXT                                        
+*---------------------------------------------------------------------- 
+           L        R15,@THTPARSR_           R15:  @THTPARSR            
+           BALR     R14,R15                        PARSE THE RECORD     
+           LR       R4,R1                    R4:   @THTCOMM             
+           USING    THTCOMM,R4                     ADDRESS THTCOMM      
+           CIJNE    R15,0,ERROR01                  IF RC<>0 THEN ERROR  
+*---------------------------------------------------------------------- 
+*          DETERMINE IN WHICH ENVIRONMENT WE ARE RUNNING                
+*---------------------------------------------------------------------- 
+           TM       ENV_FLAG,ENV_TAF               IN AUTOMAT AS ?      
+           JZ       TAF_ENV                        YES, USE LX_NUMBER1  
+           TM       ENV_FLAG,ENV_SWITCH            OUTSIDE AUTOMAT AS ? 
+           JO       SWITCH_ENV                     YES, USE LX_NUMBER2  
+           TM       ENV_FLAG,ENV_LOCAL             OUTSIDE AUTOMAT?     
+           JO       LOCAL_ENV                      YES                  
+           J        EXIT01                         JUST IN CASE...      
+*********************************************************************** 
+*          RULE REXX                                                    
+*          PRIMARY = HOME                                               
+*********************************************************************** 
+TAF_ENV    DS       0H                                                  
+           L        R14,LX_NUMBER1                                      
+           LR       R1,R4                    R1:   @THTCOMM             
+           OI       FUNCTION,THTCOMMIT                                  
+           LAY      0,THTCOMML+THT           R0:   @WORKAREA            
+           PC       0(14)                          CALL TAFPC0HT        
+           CIJNE    R15,0,ERROR01                  IF RC<>0 THEN ERROR  
+           ST       R15,0(,R10)                    SET SUBCOM RC        
+           TM       FUNCTION,THTSELECT             SELECT ?             
+           JO       TEST_SELEC                                          
+           TM       FUNCTION,THTSHOWTBL            SHOW TABLES ?        
+           JO       SHOWTBL01                                           
+           TM       FUNCTION,THTSHOWSTA            SHOW STATISTICS?     
+           JO       SHOWSTA01                                           
+           J        EXIT01                                              
+*********************************************************************** 
+*          TAF REXX                                                     
+*          PRIMARY  <> HOME                                             
+*********************************************************************** 
+SWITCH_ENV DS       0H                                                  
+           L        R14,LX_NUMBER2           R14:  SSWITCH LXN          
+           LR       R1,R4                    R1:   @THTCOMM             
+           OI       FUNCTION,THTCOMMIT                                  
+           PC       0(14)                                               
+           LR       R4,R1                    R4:   @THTCOMM             
+           CIJNE    R15,0,ERROR01                                       
+           ST       R15,0(,R10)                                         
+           TM       FUNCTION,THTSELECT             SELECT ?             
+           JO       TEST_SELEC                                          
+           TM       FUNCTION,THTSHOWTBL            SHOW TABLES ?        
+           JO       SHOWTBL01                                           
+           TM       FUNCTION,THTSHOWSTA            SHOW STATISTICS?     
+           JO       SHOWSTA01                                           
+           J        EXIT01                                              
+TEST_SELEC DS       0H                                                  
+           LLC      R0,KEYL                  R0:   LENGTH KEY           
+           CIJNE    R0,1,SELEC01                   >1 THEN NORMAL SELEC 
+           L        R15,@KEY                 R15:  @KEY                 
+           LLC      R15,0(,R15)              R15:  KEY                  
+           CIJNE    R15,C'*',SELEC01               SELECT * ?           
+           J        SELECTALL                      YES, GET ALL         
+*********************************************************************** 
+*          REXX WITHOUT ACTIVE AUTOMAT                                  
+*********************************************************************** 
+LOCAL_ENV  DS       0H                                                  
+           MVC      @MAPAREA,@HT                   MV PTR HT MAP        
+*---------------------------------------------------------------------- 
+*          DETERMINE THE COMMAND                                        
+*---------------------------------------------------------------------- 
+           TM       FUNCTION,THTSELECT             SELECT ?             
+           JO       SELECT00                                            
+           TM       FUNCTION,THTINSERT             INSERT ?             
+           JO       INSERT00                                            
+           TM       FUNCTION,THTUPDATE             UPDATE ?             
+           JO       UPDATE00                                            
+           TM       FUNCTION,THTMERGE              MERGE ?              
+           JO       MERGE00                                             
+           TM       FUNCTION,THTDELETE             DELETE ?             
+           JO       DELETE00                                            
+           TM       FUNCTION,THTCOMMIT             COMMIT ?             
+           JO       COMMIT00                                            
+           TM       FUNCTION,THTCREATE             CREATE ?             
+           JO       CREATE00                                            
+           TM       FUNCTION,THTDROP               DROP   ?             
+           JO       DROP00                                              
+           TM       FUNCTION,THTPURGE              PURGE ?              
+           JO       PURGE00                                             
+           TM       FUNCTION,THTSHOWTBL            SHOW TABLES ?        
+           JO       SHOWTBL00                                           
+           TM       FUNCTION,THTSHOWSTA            SHOW STATISTICS ?    
+           JO       SHOWSTA00                                           
+           J        EXIT01                                              
+*---------------------------------------------------------------------- 
+*          SELECT RECORD                                                
+*---------------------------------------------------------------------- 
+SELECT00   DS       0H                                                  
+           LLC      R0,KEYL                  R0:   LENGTH KEY           
+           CIJNE    R0,1,SELEC00                   >1 THEN NORMAL SELEC 
+           L        R15,@KEY                 R15:  @KEY                 
+           LLC      R15,0(,R15)              R15:  KEY                  
+           CIJNE    R15,C'*',SELEC00               SELECT * ?           
+           L        R15,@THTSELES_           R15:  @THTSELES            
+           LR       R1,R4                    R1:   @THTCOMM             
+           BALR     R14,R15                        SELECT *             
+           CIJNE    R15,0,ERROR01                  IF RC<>0 THEN ERROR  
+           J        SELECTALL                                           
+SELEC00    DS       0H                                                  
+           L        R15,@THTSELEC_           R15:  @THTSELEC            
+           LR       R1,R4                    R1:   @THTCOMM             
+           BALR     R14,R15                        SELECT FROM TBL      
+SELEC01    CIJNE    R15,0,ERROR01                  IF RC<>0 THEN ERROR  
+           ST       R15,0(,R10)                    SET RC               
+           L        R7,@THTRETURN            R7:   @RETURN_AREA         
+           LA       R8,#ARRAYL(,R7)          R8:   ELEMENT INDX 0       
+           USING    #ARRAYEL,R8                    ADDRESS ELEMENT 0    
+           LLC      R5,KEYL                  R5:   LENGTH TABLENAME     
+           L        R3,#ARRAYELML            R3:   LENGTH KEY           
+           L        R2,#ARRAYELM@            R2:   @KEY                 
+           TAFTSOV  NAME=@KEY,NAMEL=(R5),VALUE=(R2),VALUEL=(R3),       +
+               MF=(E,REXV)                                              
+           TM       ENV_FLAG,ENV_LOCAL             AUTOMAT ACTIVE?      
+           JZ       SELEC02                        YES, USE PC          
+           FREE     R7                             NO, FREE ARRAY       
+           J        EXIT01                                              
+*--------------------------------------------                           
+*          SELECT *                                                     
+*--------------------------------------------                           
+SELECTALL  DS       0H                                                  
+           L        R7,@THTRETURN            R7:   @RETURN_AREA         
+           USING    #ARRAY,R7                      ADDRESS THE ARRAY    
+           L        R6,#ARRAYELM             R6:   NUMBER ELEMENTS      
+           DROP     R7                                                  
+           LA       R8,#ARRAYL(,R7)          R8:   ELEMENT INDX 0       
+           USING    #ARRAYEL,R8                    ADDRESS ELEMENT      
+           XC       INDEX,INDEX                    RESET INDEX NUMBER   
+           LLC      R5,TBLNAMEL              R5:   LENGTH TABLENAME     
+ALLRECORDS DS       0H                                                  
+           L        R3,#ARRAYELML            R3:   LENGTH KEY           
+           L        R2,#ARRAYELM@            R2:   @KEY                 
+           ASI      INDEX,1                        INCR. INDEX          
+           LA       R8,#ARRAYELL(,R8)        R8:   NEXT ELEMENT         
+           TAFTSOV NAME=@TBLNAME,NAMEL=(R5),VALUE=(R2),VALUEL=(R3),    +
+               MF=(E,REXV),TYP=STEM,IDX=INDEX                           
+           JCT      R6,ALLRECORDS                  GET THEM ALL         
+           TAFCONVC SRC=INDEX,MF=(E,CONVC)         CONV INDEX COUNT     
+           ST       R0,@NUMBER                     SAVE PTR TO NUMBER   
+           ST       R1,NUML                        SAVE LENGTH NUMBER   
+           TAFTSOV  NAME=@TBLNAME,NAMEL=(R5),VALUE=@NUMBER,            +
+               VALUEL=NUML,MF=(E,REXV),TYP=STEM,IDX=0                   
+           TM       ENV_FLAG,ENV_LOCAL             AUTOMAT ACTIVE?      
+           JZ       SELEC02                        YES, USE PC          
+           FREE     R7                             NO, FREE THE ARRAY   
+           J        EXIT01                                              
+SELEC02    DS       0H                                                  
+           L        R14,LX_NUMBER2           R14:  SS LX_NUMBER         
+           LR       R1,R7                    R1:   @ARRAY               
+           L        R0,0(,R1)                R0:   SIZE ARRAY           
+           TAFFREE  SRC=(R1),SRCL=(R0),MF=(E,FREE),PC=(R14)             
+           J        EXIT01                         RETURN               
+*---------------------------------------------------------------------- 
+*          INSERT RECORD                                                
+*---------------------------------------------------------------------- 
+INSERT00   DS       0H                                                  
+           L        R15,@THTINSRT_           R15:  @THTINSRT            
+           LR       R1,R4                    R1:   @THTCOMM             
+           OI       FUNCTION,THTCOMMIT                                  
+           BALR     R14,R15                        INSERT INTO TABLE    
+           CIJNE    R15,0,ERROR01                  IF RC<>0 THEN ERROR  
+           ST       R15,0(,R10)                    SET RC               
+           DIV      SAVE,ID=HTTOKEN,SPAN=HTSIZE4K,MF=(E,SAVE)           
+           J        EXIT01                                              
+*---------------------------------------------------------------------- 
+*          UPDATE RECORD                                                
+*---------------------------------------------------------------------- 
+UPDATE00   DS       0H                                                  
+           L        R15,@THTUPDAT_           R15:  @THTUPDAT            
+           LR       R1,R4                    R1:   @THTCOMM             
+           OI       FUNCTION,THTCOMMIT                                  
+           BALR     R14,R15                        UPDATE RECORD IN TBL 
+           CIJNE    R15,0,ERROR01                  IF RC<>0 THEN ERROR  
+           ST       R15,0(,R10)                    SET RC               
+           DIV      SAVE,ID=HTTOKEN,SPAN=HTSIZE4K,MF=(E,SAVE)           
+           J        EXIT01                                              
+*---------------------------------------------------------------------- 
+*          MERGE = UPDATE OR INSERT RECORD                              
+*---------------------------------------------------------------------- 
+MERGE00    DS       0H                                                  
+           L        R15,@THTMERG0_           R15:  @THTMERG0            
+           LR       R1,R4                    R1:   @THTCOMM             
+           OI       FUNCTION,THTCOMMIT                                  
+           BALR     R14,R15                        MERGE RECRD INTO TBL 
+           CIJNE    R15,0,ERROR01                  IF RC<>0 THEN ERROR  
+           ST       R15,0(,R10)                    SET RC               
+           DIV      SAVE,ID=HTTOKEN,SPAN=HTSIZE4K,MF=(E,SAVE)           
+           J        EXIT01                                              
+*---------------------------------------------------------------------- 
+*          DELETE RECORD                                                
+*---------------------------------------------------------------------- 
+DELETE00   DS       0H                                                  
+           L        R15,@THTDELET_           R15:  @THTDELET            
+           LR       R1,R4                    R1:   @THTCOMM             
+           OI       FUNCTION,THTCOMMIT                                  
+           BALR     R14,R15                        CREATE TABLE         
+           CIJNE    R15,0,ERROR01                  IF RC<>0 THEN ERROR  
+           ST       R15,0(,R10)                    SET RC               
+           DIV      SAVE,ID=HTTOKEN,SPAN=HTSIZE4K,MF=(E,SAVE)           
+           J        EXIT01                                              
+*---------------------------------------------------------------------- 
+*          SAVE ALL CHANGES                                             
+*---------------------------------------------------------------------- 
+COMMIT00   DS       0H                                                  
+           DIV      SAVE,ID=HTTOKEN,SPAN=HTSIZE4K,MF=(E,SAVE)           
+           ST       R15,0(,R10)                    SET RC               
+           J        EXIT01                                              
+*---------------------------------------------------------------------- 
+*          CREATE   TABLE                                               
+*---------------------------------------------------------------------- 
+CREATE00   DS       0H                                                  
+           L        R15,@THTCREAT_           R15:  @THTCREAT            
+           LR       R1,R4                    R1:   @THTCOMM             
+           OI       FUNCTION,THTCOMMIT                                  
+           BALR     R14,R15                        CREATE TABLE         
+           CIJNE    R15,0,ERROR01                  IF RC<>0 THEN ERROR  
+           ST       R15,0(,R10)                    SET RC               
+           DIV      SAVE,ID=HTTOKEN,SPAN=HTSIZE4K,MF=(E,SAVE)           
+           J        EXIT01                         EXIT                 
+*---------------------------------------------------------------------- 
+*          DROP     TABLE                                               
+*---------------------------------------------------------------------- 
+DROP00     DS       0H                                                  
+           L        R15,@THTDROP0_           R15:  @THTDROP0            
+           LR       R1,R4                    R1:   @THTCOMM             
+           OI       FUNCTION,THTCOMMIT                                  
+           BALR     R14,R15                        DROP TABLE           
+           CIJNE    R15,0,ERROR01                  IF RC<>0 THEN ERROR  
+           ST       R15,0(,R10)                    SET RC               
+           DIV      SAVE,ID=HTTOKEN,SPAN=HTSIZE4K,MF=(E,SAVE)           
+           J        EXIT01                                              
+*---------------------------------------------------------------------- 
+*          PURGE    TABLE                                               
+*---------------------------------------------------------------------- 
+PURGE00    DS       0H                                                  
+           L        R15,@THTPURG0_           R15:  @THTPURG0            
+           LR       R1,R4                    R1:   @THTCOMM             
+           OI       FUNCTION,THTCOMMIT                                  
+           BALR     R14,R15                        DROP TABLE           
+           CIJNE    R15,0,ERROR01                  IF RC<>0 THEN ERROR  
+           ST       R15,0(,R10)                    SET RC               
+           DIV      SAVE,ID=HTTOKEN,SPAN=HTSIZE4K,MF=(E,SAVE)           
+           J        EXIT01                                              
+*---------------------------------------------------------------------- 
+*          DISPLAY ALL TABLE NAMES                                      
+*---------------------------------------------------------------------- 
+SHOWTBL00  DS       0H                                                  
+           L        R15,@THTSHTAB_           R15:  @THTSHTAB            
+           LR       R1,R4                    R1:   @THTCOMM             
+           BALR     R14,R15                        GET STATISTICS       
+           CIJNE    R15,0,ERROR01                                       
+SHOWTBL01  L        R7,@THTRETURN            R7:   RETURN AREA          
+           USING    #ARRAY,R7                      ADDRESS THE ARRAY    
+           L        R6,#ARRAYELM             R6:   NUMBER ELEMENTS      
+           DROP     R7                                                  
+           LA       R8,#ARRAYL(,R7)          R8:   ELEMENT INDX 0       
+           USING    #ARRAYEL,R8                    ADDRESS ELEMENT      
+           XC       INDEX,INDEX                    RESET INDEX NUMBER   
+ALLTABLES  DS       0H                                                  
+           L        R5,#ARRAYELML            R3:   LENGTH TABLENAME     
+           L        R2,#ARRAYELM@            R2:   @TABLENAME           
+           ASI      INDEX,1                        INCR. INDEX          
+           TAFTSOV NAME=THTTABLES,NAMEL=L'THTTABLES,VALUE=(R2),        +
+               VALUEL=(R5),MF=(E,REXV),TYP=STEM,IDX=INDEX               
+           LA       R8,#ARRAYELL(,R8)        R8:   NEXT ELEMENT         
+           JCT      R6,ALLTABLES                   GET THEM ALL         
+           TAFCONVC SRC=INDEX,MF=(E,CONVC)         CONV INDEX COUNT     
+           ST       R0,@NUMBER                     SAVE PTR TO NUMBER   
+           ST       R1,NUML                        SAVE LENGTH NUMBER   
+           TAFTSOV NAME=THTTABLES,NAMEL=L'THTTABLES,VALUE=@NUMBER,     +
+               VALUEL=NUML,MF=(E,REXV),TYP=STEM,IDX=0                   
+           TM       ENV_FLAG,ENV_LOCAL             AUTOMAT ACTIVE?      
+           JZ       SHOWTBL02                      YES, USE PC          
+           FREE     R7                             NO, FREE THE ARRAY   
+           J        EXIT01                         RETURN               
+SHOWTBL02  DS       0H                                                  
+           L        R14,LX_NUMBER2           R14:  SS LX_NUMBER         
+           LR       R1,R7                    R1:   @ARRAY               
+           L        R0,0(,R1)                R0:   SIZE ARRAY           
+           TAFFREE  SRC=(R1),SRCL=(R0),MF=(E,FREE),PC=(R14)             
+           J        EXIT01                         RETURN               
+*---------------------------------------------------------------------- 
+*          DISPLAY STATISTICS FROM HTCB                                 
+*---------------------------------------------------------------------- 
+SHOWSTA00  DS       0H                                                  
+           L        R15,@THTSHSTA_           R15:  @THTSHSTA            
+           LR       R1,R4                    R1:   @THTCOMM             
+           BALR     R14,R15                        GET STATISTICS       
+           CIJNE    R15,0,ERROR01                                       
+SHOWSTA01  DS       0H                                                  
+           DROP     R4                             DROP THTCOMM         
+           USING    THTSHSTAR,R4                   ADDRESS RETURN AREA  
+*--------------------------------------------                           
+*          NUMBER   OF BUCKETS                                          
+*--------------------------------------------                           
+           TAFCONVC SRC=THTSHSTA_BUC,MF=(E,CONVC)                       
+           ST       R0,@NUMBER                                          
+           ST       R1,NUML                                             
+           TAFTSOV NAME=THTNUMBUCK,NAMEL=L'THTNUMBUCK,                 +
+               VALUE=@NUMBER,VALUEL=NUML,MF=(E,REXV)                    
+*--------------------------------------------                           
+*          NUMBER   OF USED BUCKETS                                     
+*--------------------------------------------                           
+           TAFCONVC SRC=THTSHSTA_USE,MF=(E,CONVC)                       
+           ST       R0,@NUMBER                                          
+           ST       R1,NUML                                             
+           TAFTSOV NAME=THTUSEBUCK,NAMEL=L'THTUSEBUCK,                 +
+               VALUE=@NUMBER,VALUEL=NUML,MF=(E,REXV)                    
+*--------------------------------------------                           
+*          NUMBER   OF FREE BUCKETS                                     
+*--------------------------------------------                           
+           TAFCONVC SRC=THTSHSTA_FRE,MF=(E,CONVC)                       
+           ST       R0,@NUMBER                                          
+           ST       R1,NUML                                             
+           TAFTSOV NAME=THTFREBUCK,NAMEL=L'THTFREBUCK,                 +
+               VALUE=@NUMBER,VALUEL=NUML,MF=(E,REXV)                    
+*--------------------------------------------                           
+*          SIZE OF  BUCKET                                              
+*--------------------------------------------                           
+           TAFCONVC SRC=THTSHSTA_SBU,MF=(E,CONVC)                       
+           ST       R0,@NUMBER                                          
+           ST       R1,NUML                                             
+           TAFTSOV NAME=THTSIZBUCK,NAMEL=L'THTSIZBUCK,                 +
+               VALUE=@NUMBER,VALUEL=NUML,MF=(E,REXV)                    
+*--------------------------------------------                           
+*          SIZE OF  KEY/VALUE FIELD                                     
+*--------------------------------------------                           
+           TAFCONVC SRC=THTSHSTA_SVA,MF=(E,CONVC)                       
+           ST       R0,@NUMBER                                          
+           ST       R1,NUML                                             
+           TAFTSOV NAME=THTSIZKVAL,NAMEL=L'THTSIZKVAL,                 +
+               VALUE=@NUMBER,VALUEL=NUML,MF=(E,REXV)                    
+*--------------------------------------------                           
+*          NUMBER   OF TABLES                                           
+*--------------------------------------------                           
+           TAFCONVC SRC=THTSHSTA_TBL,MF=(E,CONVC)                       
+           ST       R0,@NUMBER                                          
+           ST       R1,NUML                                             
+           TAFTSOV NAME=THTNUMTBLS,NAMEL=L'THTNUMTBLS,                 +
+               VALUE=@NUMBER,VALUEL=NUML,MF=(E,REXV)                    
+*--------------------------------------------                           
+*          NUMBER   OF USED TABLES                                      
+*--------------------------------------------                           
+           TAFCONVC SRC=THTSHSTA_TBU,MF=(E,CONVC)                       
+           ST       R0,@NUMBER                                          
+           ST       R1,NUML                                             
+           TAFTSOV NAME=THTUSETBLS,NAMEL=L'THTUSETBLS,                 +
+               VALUE=@NUMBER,VALUEL=NUML,MF=(E,REXV)                    
+*--------------------------------------------                           
+*          NUMBER   OF FREE TABLES                                      
+*--------------------------------------------                           
+           TAFCONVC SRC=THTSHSTA_TBF,MF=(E,CONVC)                       
+           ST       R0,@NUMBER                                          
+           ST       R1,NUML                                             
+           TAFTSOV NAME=THTFRETBLS,NAMEL=L'THTFRETBLS,                 +
+               VALUE=@NUMBER,VALUEL=NUML,MF=(E,REXV)                    
+*--------------------------------------------                           
+*          LOAD     FACTOR                                              
+*--------------------------------------------                           
+           TAFCONVC SRC=THTSHSTA_LOD,MF=(E,CONVC)                       
+           ST       R0,@NUMBER                                          
+           ST       R1,NUML                                             
+           TAFTSOV NAME=THTLFACTOR,NAMEL=L'THTLFACTOR,                 +
+               VALUE=@NUMBER,VALUEL=NUML,MF=(E,REXV)                    
+           DROP     R4                                                  
+           USING    THTCOMM,R4                                          
+           J        EXIT01                                              
+*********************************************************************** 
+* RETURN                                                                
+*********************************************************************** 
+EXIT01     DS       0H                                                  
+           LARL     R12,EXIT01                                          
+           USING    EXIT01,R12                                          
+           FREE     R4                             FREE THTCOMM AREA    
+           L        R13,4(R13)               R13:  CALLER SAVEAREA      
+           STORAGE  RELEASE,ADDR=(R11),LENGTH=WORKAREAL                 
+           SR       R15,R15                                             
+           RETURN   (14,12),RC=(15)                RETURN TO CALLER     
+           DROP     R12                                                 
+*********************************************************************** 
+* ERRORS                                                                
+*********************************************************************** 
+*---------------------------------------------------------------------- 
+*          ERROR IN PARSER OR THT ROUTINE                               
+*---------------------------------------------------------------------- 
+ERROR01    DS       0H                                                  
+           ST       R15,0(,R10)                    SET RC               
+           J        EXIT01                         EXIT                 
+*---------------------------------------------------------------------- 
+*          NO COMMAND OR ALL BLANKS                                     
+*---------------------------------------------------------------------- 
+ERROR02    DS       0H                                                  
+           IILF     R15,#WRONG_FUNCTION                                 
+           ST       R15,0(,R10)                    SET RC               
+           J        EXIT01                         EXIT                 
+*********************************************************************** 
+* CONSTANTS                                                             
+*********************************************************************** 
+           DS       0F                                                  
+@THTPARSR_ DC       V(THTPARSR)                    PTR TO PARSER        
+@TAFLENGT_ DC       V(TAFLENGT)                    PTR TO LENGTH        
+@THTCREAT_ DC       V(THTCREAT)                    PTR TO THTCREAT      
+@THTSELEC_ DC       V(THTSELEC)                    PTR TO THTSELEC      
+@THTSELES_ DC       V(THTSELES)                    PTR TO THTSELES      
+@THTINSRT_ DC       V(THTINSRT)                    PTR TO THTINSRT      
+@THTMERG0_ DC       V(THTMERG0)                    PTR TO THTMERG0      
+@THTDELET_ DC       V(THTDELET)                    PTR TO THTDELET      
+@THTDROP0_ DC       V(THTDROP0)                    PTR TO THTDROP0      
+@THTPURG0_ DC       V(THTPURG0)                    PTR TO THTPURGE      
+@THTUPDAT_ DC       V(THTUPDAT)                    PTR TO THTUPDAT      
+@THTSHSTA_ DC       V(THTSHSTA)                    PTR TO THTSHSTA      
+@THTSHTAB_ DC       V(THTSHTAB)                    PTR TO THTSHTAB      
+           LTORG    ,                              LITERALS             
+*********************************************************************** 
+* WORKAREA                                                              
+*********************************************************************** 
+WORKAREA   DSECT    ,                              MY WORKAREA          
+SAVEAREA   DS       18F                            MY SAVEAREA          
+@NUMBER    DS       A                              PTR TO EBCDIC NUMBER 
+NUML       DS       F                              LENGTH OF NUMBER     
+INDEX      DS       F                              STEM INDEX NUMBER    
+SAVE       DIV      SAVE,MF=L                      DIV SAVE PARM LIST   
+REXV       TAFTSOV  MF=L                           TAFTSOV PARM LIST    
+CONVC      TAFCONVC MF=L                                                
+FREE       TAFFREE  MF=L                                                
+THT        THT      MF=L                                                
+NUMCHAR    DS       CL16                           CONVERT WORKAREA     
+WORKAREAL  EQU      *-WORKAREA                     LENGTH WORKAREA      
+*********************************************************************** 
+* DSECTS                                                                
+*********************************************************************** 
+           TAFWORK  ,                              TAF SHARED WORKAREA  
+           END      THTSCOM                                             

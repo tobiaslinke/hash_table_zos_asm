@@ -1,0 +1,28 @@
+                   MACRO
+&LABEL             THTCOMM
+THTCOMM            DSECT
+@MAPAREA           DS  A             LDS MAP WINDOW AREA
+@VALUE             DS  A             VALUE POINTER
+@TBLNAME           DS  A             TABLE NAME POINTER
+@KEY               DS  A             KEY POINTER
+@THTSHMAPR         DS  A             THTSHMAP RETURN AREA POINTER
+@THTSHSTAR         DS  A             THTSHSTA RETURN AREA POINTER
+@THTSHTABR         DS  A             THTSHTAB RETURN AREA POINTER
+BUCSIZE            DS  F             SIZE OF A BUCKET
+BUCCOUNT           DS  F             MAX COUNT OF BUCKETS
+TBLHASH            DS  F             HASH OF TABLE NAME
+KEYHASH            DS  F             HASH OF KEY
+VALUEL             DS  F             LENGTH VALUE
+MAPOFF             DS  F             OFFSET DIV WINDOW
+MAPSIZE            DS  F             SIZE OF MAP WINDOW STORAGE
+MAPBLOCKS          DS  F             SIZE OF MAP WINDOW ON 4K BLOCKS
+CBLOCKSL           DS  F             LENGTH CONTROL BLOCKS AREA IN LDS
+FUNCTION           DS  XL1           FUNCTION CODE
+THTSELECT          EQU B'10000000'   SELECT
+THTINSERT          EQU B'01000000'   INSERT
+THTUPDATE          EQU B'00100000'   UPDATE
+THTDELETE          EQU B'00010000'   DELETE
+TBLNAMEL           DS  XL1           LENGTH TABLE NAME
+KEYL               DS  XL1           KEY MAX 255 BYTES
+THTCOMML           EQU *-THTCOMM
+                   MEND

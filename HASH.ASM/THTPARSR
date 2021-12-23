@@ -1,0 +1,645 @@
+***********************************************************************
+* Description:                                                        *
+* ________________________________________________________________    *
+* PARSE A HASHTABLE COMMAND AND CREATE THTCOMM AREA.______________    *
+* THE CALLER MUST RELEASE THT THTCOMM STORAGE AFTER HE IS ________    *
+* FINISHED._______________________________________________________    *
+* ________________________________________________________________    *
+* ENTRY: R1: @COMMAND______________________________________________   *
+* _______R0:_LENGTH OF COMMAND____________________________________    *
+* ________________________________________________________________    *
+* RETURN:R15:RC___________________________________________________    *
+* _______R1:@THTCOMM______________________________________________    *
+* ________________________________________________________________    *
+***********************************************************************
+           TITLE    'THTPARSR PARSE THT COMMAND'
+           SYSSTATE ARCHLVL=2
+THTPARSR   RSECT    ,                              REANTRENT
+THTPARSR   AMODE    31
+THTPARSR   RMODE    ANY
+***********************************************************************
+* REGISTER                                                            *
+***********************************************************************
+R0         EQU      0
+R1         EQU      1
+R2         EQU      2
+R3         EQU      3
+R4         EQU      4
+R5         EQU      5
+R6         EQU      6
+R7         EQU      7
+R8         EQU      8
+R9         EQU      9
+R10        EQU      10
+R11        EQU      11                             @WORKAREA
+R12        EQU      12                             @THTPARSR
+R13        EQU      13                             @SAVEAREA
+R14        EQU      14
+R15        EQU      15
+***********************************************************************
+* ENTRY                                                               *
+***********************************************************************
+           BAKR     R14,0                          SAVE CALLER REGISTER
+           LR       R12,R15                  R12:  @THTPARSR
+           USING    THTPARSR,R12                   ADDRESS THTPARSR
+           LR       R10,R1                   R10:  @COMMAND TEXT
+           LR       R4,R0                    R4:   COMMAND TXT LENGTH
+***********************************************************************
+* MAIN
+*
+* CREATE(tablename)
+* DROP(tablename)
+* PURGE(tablename)
+* INSERT(tablename,key,value)
+* UPDATE(tablename,key,value)
+* MERGE(tablename,key,value)
+* SELECT(tablename,key)
+* DELETE(tablename,key)
+* PUT(tablename,value)
+* GET(tablename)
+* INIT(number_tables,number_buckets,size_bucket)
+* COMMIT()
+* DUMP()
+* SHOW(STATISTICS)
+* SHOW(TABLES)
+*
+***********************************************************************
+           STORAGE  OBTAIN,LOC=(31,31),LENGTH=THTCOMML,BNDRY=DBLWD
+           LR       R3,R1                    R3:   @THTCOMM
+           USING    THTCOMM,R3                     ADDRESS THTCOMM
+           ST       R0,THTCOMMS                    SET THTCOMM SIZE
+*----------------------------------------------------------------------
+*          SPLIT COMMAND AT (),'"
+*
+*          ARRAY(0)=COMMAND
+*          ARRAY(1)=COMMAND INPUT
+*----------------------------------------------------------------------
+           IILF     R5,L'DELIMITERS
+           LA       R8,DELIMITERS
+           TAFSPLIT STR=(R10),STRLEN=(R4),DELIM=(R8),DELIML=(R5),      +
+               MF=(E,SPLIT)
+           LR       R8,R1                    R8:   @ARRAY OF SUBSTR.
+           USING    #ARRAY,R8                      ADDRESS ARRAY
+           L        R7,#ARRAYELM             R7:   NUMBER OF ELEMENTS
+           CIJL     R7,3,ERROR01                   AT LEAST 3 EXPECTED
+           LA       R9,#ARRAYL(,R8)          R9:   @INDEX 0
+           USING    #ARRAYEL,R9                    ADDRESS ELEMENT
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           AHI      R7,-1                          DECR. FOR 1. KEYWORD
+*----------------------------------------------------------------------
+*          DETERMINE COMAND
+*----------------------------------------------------------------------
+           CLC      =CL6'SELECT',0(R10)            SELECT FROM TABLE ?
+           JE       SELECT
+           CLC      =CL6'INSERT',0(R10)            INSERT INTO TABLE ?
+           JE       INSERT
+           CLC      =CL5'MERGE',0(R10)             MERGE INTO TABLE ?
+           JE       MERGE
+           CLC      =CL6'UPDATE',0(R10)            UPDATE KEY/VALUE  ?
+           JE       UPDATE
+           CLC      =CL3'PUT',0(R10)               PUT INTO FIFO ?
+           JE       PUT
+           CLC      =CL3'GET',0(R10)               GET FROM FIFO ?
+           JE       GET
+           CLC      =CL6'DELETE',0(R10)            DELETE FROM TABLE ?
+           JE       DELETE
+           CLC      =CL6'CREATE',0(R10)            CREATE TABLE ?
+           JE       CREATE
+           CLC      =CL4'DROP',0(R10)              DROP TABLE ?
+           JE       DROP
+           CLC      =CL5'PURGE',0(R10)             PURGE TABLE ?
+           JE       PURGE
+           CLC      =CL6'COMMIT',0(R10)            COMMIT CHANGES ?
+           JE       COMMIT
+           CLC      =CL4'INIT',0(R10)              INIT HASHTABLE ?
+           JE       INIT
+           CLC      =CL4'DUMP',0(R10)              INIT HASHTABLE ?
+           JE       DUMP
+           CLC      =CL4'SHOW',0(R10)              SHOW ?
+           JE       SHOW
+           J        ERROR01                        WRONG COMMAND
+*----------------------------------------------------------------------
+*          INSERT KEY/VALUE INTO TABLE
+*----------------------------------------------------------------------
+INSERT     DS       0H
+           MVI      FUNCTION,THTINSERT             SET INSERT FLAG
+           JAS      R2,GET3ARGS                    GET TBLNAM,KEY,VALUE
+           SR       R15,R15
+           J        EXIT01
+*----------------------------------------------------------------------
+*          PUT INTO FIFO
+*----------------------------------------------------------------------
+PUT        DS       0H
+           MVI      FUNCTION,THTPUT                SET PUT FLAG
+           JAS      R2,GET2ARGS_2                  GET TBLNAM,KEY,VALUE
+           SR       R15,R15
+           J        EXIT01
+*----------------------------------------------------------------------
+*          GET FROM FIFO
+*----------------------------------------------------------------------
+GET        DS       0H
+           MVI      FUNCTION,THTGET                SET GET FLAG
+           JAS      R2,GET1ARGS                    GET TABLE NAME
+           SR       R15,R15
+           J        EXIT01
+*----------------------------------------------------------------------
+*          SELECT VALUE FROM TABLE
+*----------------------------------------------------------------------
+SELECT     DS       0H
+           MVI      FUNCTION,THTSELECT             SET SELECT FLAG
+           JAS      R2,GET2ARGS                    GET TABLENAME & KEY
+           SR       R15,R15
+           J        EXIT01
+*----------------------------------------------------------------------
+*          MERGE KEY/VALUE INTO TABLE
+*----------------------------------------------------------------------
+MERGE      DS       0H
+           MVI      FUNCTION,THTMERGE              SET MERGE FLAG
+           JAS      R2,GET3ARGS                    GET TBLNAM,KEY,VALUE
+           SR       R15,R15
+           J        EXIT01
+*----------------------------------------------------------------------
+*          INIT HASHTABLE
+*----------------------------------------------------------------------
+INIT       DS       0H
+           MVI      FUNCTION,THTINIT               SET INIT FLAG
+           JAS      R2,GETINIARGS                  GET TBLS,BUCKS,BSIZE
+           SR       R15,R15
+           J        EXIT01
+*----------------------------------------------------------------------
+*          UPDATE KEY/VALUE IN TABLE
+*----------------------------------------------------------------------
+UPDATE     DS       0H
+           MVI      FUNCTION,THTUPDATE             SET UPDATE FLAG
+           JAS      R2,GET3ARGS                    GET TBLNAM,KEY,VALUE
+           SR       R15,R15
+           J        EXIT01
+*----------------------------------------------------------------------
+*          DELETE KEY/VALUE FROM TABLE
+*----------------------------------------------------------------------
+DELETE     DS       0H
+           MVI      FUNCTION,THTDELETE             SET DELETE FLAG
+           JAS      R2,GET2ARGS                    GET TABLENAME & KEY
+           SR       R15,R15
+           J        EXIT01
+*----------------------------------------------------------------------
+*          CREATE TABLE
+*----------------------------------------------------------------------
+CREATE     DS       0H
+           MVI      FUNCTION,THTCREATE             SET CREATE FLAG
+           JAS      R2,GET1ARGS                    GET TABLE NAME
+           SR       R15,R15
+           J        EXIT01
+*----------------------------------------------------------------------
+*          DROP TABLE
+*----------------------------------------------------------------------
+DROP       DS       0H
+           MVI      FUNCTION,THTDROP               SET DROP FLAG
+           JAS      R2,GET1ARGS                    GET TABLE NAME
+           SR       R15,R15
+           J        EXIT01
+*----------------------------------------------------------------------
+*          PURGE TABLE
+*----------------------------------------------------------------------
+PURGE      DS       0H
+           MVI      FUNCTION,THTPURGE              SET DROP FLAG
+           JAS      R2,GET1ARGS                    GET TABLE NAME
+           SR       R15,R15
+           J        EXIT01
+*----------------------------------------------------------------------
+*          SHOW STATISTICS/TABLES
+*----------------------------------------------------------------------
+SHOW       DS       0H
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 1
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO OPENING (
+           CIJNE    R1,C'(',ERROR08                THEN ERROR
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 2
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           L        R5,#ARRAYELML            R5:   LENGTH ELEMENT VALUE
+           CLC      =CL6'TABLES',0(R10)            SHOW TABLES ?
+           JNE      SHOWNEXT                       YES, GO ON
+           CIJNE    R5,6,ERROR07                   IF WRONG LEN, ERROR
+           MVI      FUNCTION,THTSHOWTBL            SET FLAG
+           J        SHOWEXIT
+SHOWNEXT   CLC      =CL10'STATISTICS',0(R10)       SHOW STATISTICS ?
+           JNE      ERROR07                        NO, ERROR
+           CIJNE    R5,10,ERROR07                  IF WRONG LEN, ERROR
+           MVI      FUNCTION,THTSHOWSTA            SET FLAG
+           J        SHOWEXIT
+SHOWEXIT   DS       0H
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 3
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO CLOSING )
+           CIJNE    R1,C')',ERROR02                THEN ERROR
+           SR       R15,R15                        RC = 0
+           J        EXIT01
+*----------------------------------------------------------------------
+*          COMMIT CHANGES
+*----------------------------------------------------------------------
+COMMIT     DS       0H
+           MVI      FUNCTION,THTCOMMIT             SET COMMIT FLAG
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 1
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO OPENING (
+           CIJNE    R1,C'(',ERROR08                THEN ERROR
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 1
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO CLOSING )
+           CIJNE    R1,C')',ERROR02                THEN ERROR
+           SR       R15,R15
+           J        EXIT01
+*----------------------------------------------------------------------
+*          DUMP HASHTABLE
+*----------------------------------------------------------------------
+DUMP       DS       0H
+           MVI      FUNCTION,THTDUMP               SET DUMP FLAG
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 1
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO OPENING (
+           CIJNE    R1,C'(',ERROR08                THEN ERROR
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 1
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO CLOSING )
+           CIJNE    R1,C')',ERROR02                THEN ERROR
+           SR       R15,R15
+           J        EXIT01
+***********************************************************************
+*          GET THE  ARGUMENTS (tablename,key,value)
+***********************************************************************
+GET3ARGS   DS       0H
+*--------------------------------------------------
+*          TEST FOR OPENING BRACKET
+*--------------------------------------------------
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 1
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO OPENING (
+           CIJNE    R1,C'(',ERROR08                THEN ERROR
+           AHI      R7,-1                          DECR. KEYWORDS
+*--------------------------------------------------
+*          GET TABLENAME
+*--------------------------------------------------
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 2
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           L        R5,#ARRAYELML            R5:   LENGTH ELEMENT VALUE
+           CIJH     R5,THTTNAMEL,ERROR04           TBLNAME TOO LONG ?
+           ST       R10,@TBLNAME                   SET PTR IN THTCOMM
+           STC      R5,TBLNAMEL                    SET LEN IN THTCOMM
+           AHI      R7,-1                          DECR. KEYWORDS
+*--------------------------------------------------
+*          TEST FOR COMMA
+*--------------------------------------------------
+           CIJL     R7,1,ERROR10                   MISSING ARGUMENTS
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 3
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO COMMA
+           CIJNE    R1,C',',ERROR09                THEN ERROR
+           AHI      R7,-1                          DECR. KEYWORDS
+*--------------------------------------------------
+*          GET KEY
+*--------------------------------------------------
+           CIJL     R7,1,ERROR10                   MISSING ARGUMENTS
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 4
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           L        R5,#ARRAYELML            R5:   LENGTH ELEMENT VALUE
+           IILF     R1,256                   R1:   KEY MAX 256 LONG
+           CRJH     R5,R1,ERROR05                  KEY TOO LONG, ERROR
+           ST       R10,@KEY                       SET PTR IN THTCOMM
+           STC      R5,KEYL                        SET LEN IN THTCOMM
+           AHI      R7,-1                          DECR. KEYWORDS
+*--------------------------------------------------
+*          TEST FOR COMMA
+*--------------------------------------------------
+           CIJL     R7,1,ERROR10                   MISSING ARGUMENTS
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 5
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO COMMA
+           CIJNE    R1,C',',ERROR09                THEN ERROR
+           AHI      R7,-1                          DECR. KEYWORDS
+*--------------------------------------------------
+*          GET VALUE
+*--------------------------------------------------
+           CIJL     R7,1,ERROR10                   MISSING ARGUMENTS
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 6
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           L        R5,#ARRAYELML            R5:   LENGTH ELEMENT VALUE
+           ST       R10,@VALUE                     SET PTR IN THTCOMM
+           ST       R5,VALUEL                      SET LEN IN THTCOMM
+           AHI      R7,-1                          DECR. KEYWORDS
+*--------------------------------------------------
+*          TEST FOR CLOSING BRACKET
+*--------------------------------------------------
+           CIJL     R7,1,ERROR10                   MISSING ARGUMENTS
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 7
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO CLOSING )
+           CIJNE    R1,C')',ERROR02                THEN ERROR
+           AHI      R7,-1                          DECR. KEYWORDS
+           BR       R2                             RETURN TO CALLER
+***********************************************************************
+*          GET THE  ARGUMENTS (tablename,key)
+***********************************************************************
+GET2ARGS   DS       0H
+*--------------------------------------------------
+*          TEST FOR OPENING BRACKET
+*--------------------------------------------------
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 1
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO OPENING (
+           CIJNE    R1,C'(',ERROR08                THEN ERROR
+           AHI      R7,-1                          DECR. KEYWORDS
+*--------------------------------------------------
+*          GET TABLENAME
+*--------------------------------------------------
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 2
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           L        R5,#ARRAYELML            R5:   LENGTH ELEMENT VALUE
+           CIJH     R5,THTTNAMEL,ERROR04           TBLNAME TOO LONG ?
+           ST       R10,@TBLNAME                   SET PTR IN THTCOMM
+           STC      R5,TBLNAMEL                    SET LEN IN THTCOMM
+           AHI      R7,-1                          DECR. KEYWORDS
+*--------------------------------------------------
+*          TEST FOR COMMA
+*--------------------------------------------------
+           CIJL     R7,1,ERROR10                   MISSING ARGUMENTS
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 3
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO COMMA
+           CIJNE    R1,C',',ERROR09                THEN ERROR
+           AHI      R7,-1                          DECR. KEYWORDS
+*--------------------------------------------------
+*          GET KEY
+*--------------------------------------------------
+           CIJL     R7,1,ERROR10                   MISSING ARGUMENTS
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 4
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           L        R5,#ARRAYELML            R5:   LENGTH ELEMENT VALUE
+           IILF     R1,256                   R1:   KEY MAX 256 LONG
+           CRJH     R5,R1,ERROR05                  KEY TOO LONG, ERROR
+           ST       R10,@KEY                       SET PTR IN THTCOMM
+           STC      R5,KEYL                        SET LEN IN THTCOMM
+           AHI      R7,-1                          DECR. KEYWORDS
+*--------------------------------------------------
+*          TEST FOR CLOSING BRACKET
+*--------------------------------------------------
+           CIJL     R7,1,ERROR10                   MISSING ARGUMENTS
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 7
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO CLOSING )
+           CIJNE    R1,C')',ERROR02                THEN ERROR
+           AHI      R7,-1                          DECR. KEYWORDS
+           BR       R2                             RETURN TO CALLER
+***********************************************************************
+*          GET THE ARGUMENT (tablename)
+***********************************************************************
+GET1ARGS   DS       0H
+*--------------------------------------------------
+*          TEST FOR OPENING BRACKET
+*--------------------------------------------------
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 1
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO OPENING (
+           CIJNE    R1,C'(',ERROR08                THEN ERROR
+           AHI      R7,-1                          DECR. KEYWORDS
+*--------------------------------------------------
+*          GET TABLENAME
+*--------------------------------------------------
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 2
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           L        R5,#ARRAYELML            R5:   LENGTH ELEMENT VALUE
+           CIJH     R5,THTTNAMEL,ERROR04           TBLNAME TOO LONG ?
+           ST       R10,@TBLNAME                   SET PTR IN THTCOMM
+           STC      R5,TBLNAMEL                    SET LEN IN THTCOMM
+           AHI      R7,-1                          DECR. KEYWORDS
+*--------------------------------------------------
+*          TEST FOR CLOSING BRACKET
+*--------------------------------------------------
+           CIJL     R7,1,ERROR10                   MISSING ARGUMENTS
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 7
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO CLOSING )
+           CIJNE    R1,C')',ERROR02                THEN ERROR
+           AHI      R7,-1                          DECR. KEYWORDS
+           BR       R2                             RETURN TO CALLER
+***********************************************************************
+*          GET THE ARGUMENTS (number_tables,number_buckets,bucket_size)
+***********************************************************************
+GETINIARGS DS       0H
+*--------------------------------------------------
+*          TEST FOR OPENING BRACKET
+*--------------------------------------------------
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 1
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO OPENING (
+           CIJNE    R1,C'(',ERROR08                THEN ERROR
+           AHI      R7,-1                          DECR. KEYWORDS
+*----------------------------------------------------------------------
+*          GET NUMBER_TABLES
+*----------------------------------------------------------------------
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 2
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           L        R5,#ARRAYELML            R5:   LENGTH ELEMENT VALUE
+           CIJH     R5,9,ERROR04                   MAX 9 DIGITS
+           TAFCONVB SRC=(R10),SRCL=(R5),MF=(E,CONVB) CONVERT TO BINARY
+           ST       R1,TBLNUM                      SET NUM TBLS THTCOMM
+           AHI      R7,-1                          DECR. KEYWORDS
+*--------------------------------------------------
+*          TEST FOR COMMA
+*--------------------------------------------------
+           CIJL     R7,1,ERROR10                   MISSING ARGUMENTS
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 3
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO COMMA
+           CIJNE    R1,C',',ERROR09                THEN ERROR
+           AHI      R7,-1                          DECR. KEYWORDS
+*----------------------------------------------------------------------
+*          GET NUMBER_BUCKETS
+*----------------------------------------------------------------------
+           CIJL     R7,1,ERROR10                   MISSING ARGUMENTS
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 4
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           L        R5,#ARRAYELML            R5:   LENGTH ELEMENT VALUE
+           CIJH     R5,9,ERROR05                   MAX 9 DIGITS
+           TAFCONVB SRC=(R10),SRCL=(R5),MF=(E,CONVB) CONVERT TO BINARY
+           ST       R1,BUCCOUNT                    SET BUCKETS THTCOMM
+           AHI      R7,-1                          DECR. KEYWORDS
+*--------------------------------------------------
+*          TEST FOR COMMA
+*--------------------------------------------------
+           CIJL     R7,1,ERROR10                   MISSING ARGUMENTS
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 5
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO COMMA
+           CIJNE    R1,C',',ERROR09                THEN ERROR
+           AHI      R7,-1                          DECR. KEYWORDS
+*----------------------------------------------------------------------
+*          GET ARRAY(2) = bucket_size
+*----------------------------------------------------------------------
+           CIJL     R7,1,ERROR10                   MISSING ARGUMENTS
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 5
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           L        R5,#ARRAYELML            R5:   LENGTH ELEMENT VALUE
+           CIJH     R5,9,ERROR05                   MAX 9 DIGITS
+           TAFCONVB SRC=(R10),SRCL=(R5),MF=(E,CONVB) CONVERT TO BINARY
+           ST       R1,BUCSIZE                     SET BUCKET SIZE
+           AHI      R7,-1                          DECR. KEYWORDS
+*--------------------------------------------------
+*          TEST FOR CLOSING BRACKET
+*--------------------------------------------------
+           CIJL     R7,1,ERROR10                   MISSING ARGUMENTS
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 7
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO CLOSING )
+           CIJNE    R1,C')',ERROR02                THEN ERROR
+           AHI      R7,-1                          DECR. KEYWORDS
+           BR       R2                             RETURN TO CALLER
+***********************************************************************
+*          GET THE  ARGUMENTS (tablename,value)
+***********************************************************************
+GET2ARGS_2 DS       0H
+*--------------------------------------------------
+*          TEST FOR OPENING BRACKET
+*--------------------------------------------------
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 1
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO OPENING (
+           CIJNE    R1,C'(',ERROR08                THEN ERROR
+           AHI      R7,-1                          DECR. KEYWORDS
+*--------------------------------------------------
+*          GET TABLENAME
+*--------------------------------------------------
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 2
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           L        R5,#ARRAYELML            R5:   LENGTH ELEMENT VALUE
+           CIJH     R5,THTTNAMEL,ERROR04           TBLNAME TOO LONG ?
+           ST       R10,@TBLNAME                   SET PTR IN THTCOMM
+           STC      R5,TBLNAMEL                    SET LEN IN THTCOMM
+           AHI      R7,-1                          DECR. KEYWORDS
+*--------------------------------------------------
+*          TEST FOR COMMA
+*--------------------------------------------------
+           CIJL     R7,1,ERROR10                   MISSING ARGUMENTS
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 3
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO COMMA
+           CIJNE    R1,C',',ERROR09                THEN ERROR
+           AHI      R7,-1                          DECR. KEYWORDS
+*--------------------------------------------------
+*          GET VALUE
+*--------------------------------------------------
+           CIJL     R7,1,ERROR10                   MISSING ARGUMENTS
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 6
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           L        R5,#ARRAYELML            R5:   LENGTH ELEMENT VALUE
+           ST       R10,@VALUE                     SET PTR IN THTCOMM
+           ST       R5,VALUEL                      SET LEN IN THTCOMM
+           AHI      R7,-1                          DECR. KEYWORDS
+*--------------------------------------------------
+*          TEST FOR CLOSING BRACKET
+*--------------------------------------------------
+           CIJL     R7,1,ERROR10                   MISSING ARGUMENTS
+           LA       R9,#ARRAYELL(,R9)        R9:   INDEX 7
+           L        R10,#ARRAYELM@           R10:  @ELEMENT VALUE
+           LLC      R1,0(,R10)                     IF NO CLOSING )
+           CIJNE    R1,C')',ERROR02                THEN ERROR
+           AHI      R7,-1                          DECR. KEYWORDS
+           BR       R2                             RETURN TO CALLER
+***********************************************************************
+* RETURN
+***********************************************************************
+EXIT01     DS       0H
+           LR       R5,R15                         SAVE RC
+           FREE     R8                             FREE COMMAND ARRAY
+           LR       R1,R3                    R1:   @THTCOMM
+           LR       R15,R5                         RESTORE RC
+           PR       ,                              RETURN TO CALLER
+***********************************************************************
+* ERRORS
+***********************************************************************
+*----------------------------------------------------------------------
+*          UNKNOWN  FUNCTION
+*----------------------------------------------------------------------
+ERROR01    DS       0H
+           IILF     R15,#WRONG_FUNCTION            RC
+           MVC      THTERRMSG(30),=CL30'UNKNOWN FUNCTION'
+           J        EXIT01                         EXIT
+*----------------------------------------------------------------------
+*          CLOSING  ')' IS MISSING
+*----------------------------------------------------------------------
+ERROR02    DS       0H
+           IILF     R15,#NO_CLOSING_BRACET         RC
+           MVC      THTERRMSG(30),=CL30'NO CLOSING ) '
+           J        EXIT01                         EXIT
+*----------------------------------------------------------------------
+*          WRONG NUMBER OF ARGUMENTS
+*----------------------------------------------------------------------
+ERROR03    DS       0H
+           IILF     R15,#WRONG_NUM_ARGS            RC
+           MVC      THTERRMSG(30),=CL30'WRONG NUMBER OF ARGUMENTS'
+           FREE     R10                            FREE ARRAY
+           J        EXIT01                         EXIT
+*----------------------------------------------------------------------
+*          TABLENAME IS TOO LONG
+*----------------------------------------------------------------------
+ERROR04    DS       0H
+           IILF     R15,#TBLNAME_TO_LONG           RC
+           MVC      THTERRMSG(30),=CL30'TABLENAME IS TOO LONG'
+           J        EXIT01                         EXIT
+*----------------------------------------------------------------------
+*          KEY IS TOO LONG
+*----------------------------------------------------------------------
+ERROR05    DS       0H
+           IILF     R15,#KEY_TO_LONG               RC
+           MVC      THTERRMSG(30),=CL30'KEY IS TOO LONG'
+           J        EXIT01                         EXIT
+*----------------------------------------------------------------------
+*          DDNAME IS TOO LONG
+*----------------------------------------------------------------------
+ERROR06    DS       0H
+           IILF     R15,#DDN_TO_LONG               RC
+           MVC      THTERRMSG(30),=CL30'DDNAME IS TOO LONG'
+           J        EXIT01                         EXIT
+*----------------------------------------------------------------------
+*          UNKNOWN OPTION
+*----------------------------------------------------------------------
+ERROR07    DS       0H
+           IILF     R15,#WRONG_OPTION              RC
+           MVC      THTERRMSG(30),=CL30'UNKNOWN FUNCTION OPTION'
+           J        EXIT01                         EXIT
+*----------------------------------------------------------------------
+*          OPENING  '(' IS MISSING
+*----------------------------------------------------------------------
+ERROR08    DS       0H
+           IILF     R15,#NO_OPENING_BRACET         RC
+           MVC      THTERRMSG(30),=CL30'NO OPENING ( '
+           J        EXIT01                         EXIT
+*----------------------------------------------------------------------
+*          COMMA    MISSING
+*----------------------------------------------------------------------
+ERROR09    DS       0H
+           IILF     R15,#MISSING_COMMA             RC
+           MVC      THTERRMSG(30),=CL30'MISSING COMMA'
+           J        EXIT01                         EXIT
+*----------------------------------------------------------------------
+*          ARGUMENT MISSING
+*----------------------------------------------------------------------
+ERROR10    DS       0H
+           IILF     R15,#MISSING_ARGUMENT          RC
+           MVC      THTERRMSG(30),=CL30'MISSING ARGUMENT'
+           J        EXIT01                         EXIT
+***********************************************************************
+* CONSTANTS
+***********************************************************************
+@TAFCONVB  DC       V(TAFCONVB)                    PTR TO TAFCONVB
+@TAFSPLIT  DC       V(TAFSPLIT)                    PTR TO TAFSPLIT
+SPLIT      TAFSPLIT MF=L
+CONVB      TAFCONVB MF=L
+DELIMITERS DC       CL5'(),"',X'7D'                SPLIT AT (),"'
+           LTORG    ,                              LITERALS
+***********************************************************************
+* DSECTS
+***********************************************************************
+           DATATYPE ,                              DATATYPES MAPPING
+           THTCOMM  ,                              THT COMMAREA MAPPING
+           THTCBLKS ,                              THT CONTROL BLOCKS
+           END      THTPARSR

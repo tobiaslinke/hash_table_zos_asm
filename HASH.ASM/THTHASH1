@@ -1,0 +1,151 @@
+***********************************************************************
+*  Typ: Subprogram                                                    *
+*                                                                     *
+*  Entry: R1: A(THTCOMM)                                              *
+*                                                                     *
+*  Exit:  R15: RC                                                     *
+*         R0 : Reason Code                                            *
+*                                                                     *
+* The key hash is saved in te THTCOMM Area at the field KEYHASH       *
+***********************************************************************
+         TITLE 'THTHASH1 calculate Hash for tablename'
+         SYSSTATE ARCHLVL=2
+THTHASH1 CSECT
+THTHASH1 AMODE 31
+THTHASH1 RMODE ANY
+*********************************************************************** 
+* THTHASH1 entry                                                        
+*********************************************************************** 
+         BAKR R14,0
+         LR   R12,R15            THTHASH1 base register
+         USING THTHASH1,R12      
+*______________________________________________________________________
+*
+* THTHASH1 main
+*______________________________________________________________________
+*
+         USING THTCOMM,R1
+         LLC  R7,TBLNAMEL
+         L    R3,@TBLNAME
+*        R7=KEYL  R3=@KEY
+         IILF R2,4              we want to hash in 4Byte chunks
+         SR   R6,R6             R6: zero
+         DLR  R6,R2             R7: count 4 byte chunks
+         LTR  R7,R7             R6: remainder between 1-3
+         JZ   remain
+         L    R0,TBLHASH        R0: h1 + salt
+*        hash 4 byte chunks
+hash4B   DS   0H
+         L    R5,0(,R3)         R5: 4B of key
+         LRVR R5,R5
+*        k1 *= c1
+         SR   R4,R4
+         IILF R8,X'CC9E2D51'
+         MLR  R4,R8             R5: 4B*X'CC9E2D51'
+*        k1 = (k1 << 15) | (k1 >>> 17)
+         LR   R9,R5
+         SLL  R9,13             shift left 13 bit pos
+         SRL  R5,17             shift rigth 17 bit pos
+         XR   R5,R9
+*        k1 *= c2
+         SLR  R4,R4
+         IILF R8,X'1B873593'
+         MLR  R4,R8
+*        h1 XOR k1
+         XR   R0,R5             R5: k1
+*        h1 = (h1 << 13) | (h1 >>> 19)
+         LR   R0,R9
+         SLL  R0,13
+         SRL  R9,19
+         XR   R0,R9
+*        h1 = h1 * 5 + 0xe6546b64
+         LR   R5,R0
+         IILF R8,5
+         SR   R4,R4
+         MLR  R4,R8
+         IILF R8,X'E6546B64'
+         ALR  R5,R8
+         LR   R0,R5             R0: h1
+*        next 4 Bytes
+         LA   R3,4(,R3)         next 4Byte
+         JCT  R7,hash4B
+         LR   R5,R0             R5: h1
+remain   DS   0H
+         SR   R8,R8
+         CHI  R6,0
+         JNH  final
+case3    DS   0H
+         CHI  R6,3
+         JL   case2
+         ICM  R0,B'0010',0(R3)    R0: k1
+         SLL  R0,16
+         J    case2
+case2    DS   0H
+         CHI  R6,2
+         JL   case1
+         ICM  R8,B'0100',0(R3)
+         SLL  R8,8
+         XR   R0,R8
+case1    DS   0H
+         SLR  R7,R7
+         ICM  R7,B'1000',0(R3)
+         XR   R0,R7
+         LR   R7,R0
+         SR   R6,R6
+         IILF R8,X'CC9E2D51'
+         MLR  R6,R8
+         LR   R8,R7
+         SLL  R7,15
+         SRL  R8,17
+         XR   R7,R8
+         SR   R6,R6
+         IILF R8,X'1B873593'
+         MLR  R6,R8
+*        h1 XOR k1
+         XR   R5,R7
+final    DS   0H
+*        h1 *XOR len
+         LLC  R0,TBLNAMEL
+         XR   R5,R0
+*        h1 xor=h1 >>> 16
+         LR   R6,R5
+         SRL  R6,16
+         XR   R5,R6
+*        h1 *= 0x85ebca6b
+         SR   R4,R4
+         IILF R8,X'85EBCA6B'
+         MLR  R4,R8
+*        h1 xor=h1 >>> 13
+         LR   R6,R5
+         SRL  R6,13
+         XR   R5,R6
+*        h1 *= 0xc2b2ae35
+         SR   R4,R4
+         IILF R8,X'C2B2AE35'
+         MLR  R4,R8
+*        h1 xor=h1 >>> 16
+         LR   R6,R5
+         SRL  R6,16
+         XR   R5,R6
+         ST   R5,TBLHASH
+         DROP R1
+*----------------------------------------------------------------------
+* Return with RC
+*----------------------------------------------------------------------
+         IILF R15,0
+exit     DS   0H
+         PR
+***********************************************************************
+* Literals
+***********************************************************************
+         LTORG
+***********************************************************************
+* Variables
+***********************************************************************
+***********************************************************************
+* Macros
+***********************************************************************
+         YREGS
+         THTCOMM
+         THTCBLKS
+         END

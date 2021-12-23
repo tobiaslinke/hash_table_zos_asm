@@ -1,0 +1,24 @@
+//IBMUSERA JOB 90000000,LINKE,CLASS=A,MSGLEVEL=(1,1),
+// MSGCLASS=Q,NOTIFY=&SYSUID
+//*--------------------------------------------------------
+//* TEST MODULES
+//*--------------------------------------------------------
+//             SET MOD01=THTBATCH
+//*--------------------------------------------------------
+//             SET PREFIX=GKI0794.HASH
+//             SET LOADLIB=GKI0794.HASH.LOAD
+//             SET PROCLIB=GKI0794.HASH.PROCLIB
+//             JCLLIB ORDER=&PROCLIB
+//*--------------------------------------------------------
+//ASMLINK1     EXEC ASMLINK,
+//            PARM.ASM='USING(NOLIMIT,MAP,WARN(11))',
+//            PARM.LINK='MAP,LET,LIST,XREF'
+//ASM.SYSIN    DD DISP=SHR,DSN=&PREFIX..ASM(&MOD01)
+//ASM.SYSLIN   DD DISP=SHR,DSN=&PREFIX..OBJ(&MOD01)
+//ASM.SYSPRINT DD SYSOUT=*
+//LINK.SYSLIB  DD DISP=SHR,DSN=&LOADLIB
+//LINK.SYSLMOD DD DISP=SHR,DSN=&LOADLIB
+//LINK.SYSLIN  DD DISP=SHR,DSN=&PREFIX..OBJ(&MOD01)
+//SYSIN        DD *
+ NAME THTBATCH(R)
+/*

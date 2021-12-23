@@ -1,0 +1,147 @@
+***********************************************************************
+*  MurMurHash3
+*                                                                     *
+*  ENTRY: R1: A(THTCOMM)                                              *
+*                                                                     *
+*  EXIT:  R15: RC                                                     *
+*         R1 : @THTCOMM                                               *
+*                                                                     *
+* THE KEY HASH IS SAVED IN THE THTCOMM AREA AT THE FIELD KEYHASH      *
+***********************************************************************
+           TITLE    'THTHASH2 CALCULATE HASH FOR KEY'
+           SYSSTATE ARCHLVL=2
+THTHASH2   RSECT    ,
+THTHASH2   AMODE    31
+THTHASH2   RMODE    ANY
+           BAKR     R14,0                          SAVE CALLER REGISTER
+           LR       R12,R15                  R12:  @THTHASH2
+           USING    THTHASH2,R12                   ADDRESS THTHASH2
+           USING    THTCOMM,R1                     ADDRESS THTCOMM
+           SR       R0,R0
+           SR       R2,R2
+           SR       R3,R3
+           SR       R4,R4
+           SR       R5,R5
+           SR       R6,R6
+           SR       R7,R7
+           SR       R8,R8
+           SR       R9,R9
+           SR       R10,R10
+           SR       R11,R11
+           SR       R14,R14
+           SR       R15,R15
+           LLC      R7,KEYL                  R7:   LENGTH OF KEY
+           L        R3,@KEY                  R3:   PTR TO KEY
+           L        R0,TBLHASH               R0:   HASH OF TBLNAME
+*          ICM      R2,B'1111',0(R3)
+*          DC       F'0'
+           LR       R5,R0                    R5:   INIT HASH OF KEY
+*          R7=KEYL  R3=@KEY
+           IILF     R2,4                           HASH IN 4BYTE CHUNKS
+           SR       R6,R6                    R6:   RESET
+           DLR      R6,R2                    R7:   NUM 4B CHUNKS
+           CIJE     R7,0,REMAIN                    IF LEN KEY<3
+*          HASH 4 BYTE CHUNKS
+HASH4B     DS       0H
+           ICM      R5,B'1111',0(R3)         R5:   4B OF KEY
+           LRVR     R5,R5                          REVERSE BIT ORDER
+*          K1 *= C1
+           SR       R4,R4
+           IILF     R8,X'CC9E2D51'
+           MLR      R4,R8                    R5:   4B*X'CC9E2D51'
+*          K1 = (K1 << 15) | (K1 >>> 17)
+           LR       R9,R5
+           SLL      R9,13                          SHIFT LEFT 13 BIT
+           SRL      R5,17                          SHIFT RIGTH 17 BIT
+           XR       R5,R9
+*          K1 *= C2
+           SLR      R4,R4
+           IILF     R8,X'1B873593'
+           MLR      R4,R8
+*          H1 XOR K1
+           XR       R0,R5                    R5:   K1
+*          H1 = (H1 << 13) | (H1 >>> 19)
+           LR       R9,R0
+           SLL      R9,13
+           SRL      R0,19
+           XR       R0,R9
+*          H1 = H1 * 5 + 0XE6546B64
+           MHI      R0,5
+           IILF     R8,X'E6546B64'
+           ALR      R0,R8
+*          NEXT 4 BYTES
+           LA       R3,4(,R3)                      NEXT 4BYTES
+           JCT      R7,HASH4B
+           LR       R5,R0                    R5:   H1
+REMAIN     DS       0H
+           CIJNH    R6,0,FINAL
+CASE3      DS       0H
+           CIJL     R6,3,CASE2
+           LLC      R0,2(,R3)                R2:   K1
+           SLL      R0,16
+CASE2      DS       0H
+           CIJL     R6,2,CASE1
+           LLC      R8,1(,R3)
+           SLL      R8,8
+           XR       R0,R8
+CASE1      DS       0H
+           LLC      R7,0(,R3)
+           XR       R7,R0
+           SR       R6,R6
+           IILF     R8,X'CC9E2D51'
+           MLR      R6,R8
+           LR       R8,R7
+           SLL      R7,15
+           SRL      R8,17
+           XR       R7,R8
+           SR       R6,R6
+           IILF     R8,X'1B873593'
+           MLR      R6,R8
+*          H1 XOR K1
+           XR       R5,R7
+FINAL      DS       0H
+*          H1 *XOR LEN
+           LLC      R2,KEYL
+           XR       R5,R2
+*          H1 XOR=H1 >>> 16
+           LR       R6,R5
+           SRL      R6,16
+           XR       R5,R6
+*          H1 *= 0X85EBCA6B
+           SR       R4,R4
+           IILF     R8,X'85EBCA6B'
+           MLR      R4,R8
+*          H1 XOR=H1 >>> 13
+           LR       R6,R5
+           SRL      R6,13
+           XR       R5,R6
+*          H1 *= 0XC2B2AE35
+           SR       R4,R4
+           IILF     R8,X'C2B2AE35'
+           MLR      R4,R8
+*          H1 XOR=H1 >>> 16
+           LR       R6,R5
+           SRL      R6,16
+           XR       R5,R6
+           LR       R6,R5
+           SRL      R6,24
+           XR       R5,R6
+           ST       R5,KEYHASH
+           DROP     R1
+***********************************************************************
+* RETURN
+***********************************************************************
+           SR       R15,R15
+EXIT01     DS       0H
+           PR       ,
+***********************************************************************
+* CONSTANTS
+***********************************************************************
+           LTORG    ,
+***********************************************************************
+* DSECTS
+***********************************************************************
+           YREGS    ,
+           THTCOMM  ,
+           THTCBLKS ,
+           END      THTHASH2

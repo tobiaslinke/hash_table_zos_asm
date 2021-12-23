@@ -1,0 +1,18 @@
+ //GKI0794T JOB (ACCT,INFO),'TOBI',                                      JOB02840
+//        CLASS=A,MSGCLASS=A,NOTIFY=&SYSUID
+//*--------------------------------------------------------------------
+//* VSAM LDS fuer Data in Virtual
+//* SHAREOPTIONS(1,3) ist zwingend notwendig damit autom.
+//* der Zugriff serialisiert wird
+//*
+//*--------------------------------------------------------------------
+//LDS      EXEC PGM=IDCAMS,REGION=4096K
+//SYSPRINT DD SYSOUT=*
+//SYSIN    DD *
+ DELETE GKI0794.HASH.DATABASE.LDS
+ DEFINE CLUSTER (NAME(GKI0794.HASH.DATABASE.LDS) -
+       VOLUMES(SYTB03)           -
+       TRACKS(200,0)             -
+       SHAREOPTIONS(1,3)         -
+       LINEAR)
+/*

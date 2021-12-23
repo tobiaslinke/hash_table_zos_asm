@@ -1,0 +1,159 @@
+***********************************************************************
+* Description:                                                        *
+* ________________________________________________________________    *
+* Create a new Table Control Block________________________________    *
+* ________________________________________________________________    *
+* Entry:___R1: @THTCOMM___________________________________________    *
+* ________________________________________________________________    *
+* Return:__R15: RC________________________________________________    *
+* ________________________________________________________________    *
+***********************************************************************
+           TITLE    'THTCREAT CREATE A TABLE CONTROL CLOCK'
+           SYSSTATE ARCHLVL=2
+THTCREAT   RSECT    ,                              REANTRANT
+THTCREAT   AMODE    31
+THTCREAT   RMODE    ANY
+*********************************************************************** 
+* REGISTER                                                              
+*********************************************************************** 
+R0         EQU      0
+R1         EQU      1                              @THTCOMM             
+R2         EQU      2                                                   
+R3         EQU      3                                                   
+R4         EQU      4                                                   
+R5         EQU      5                                                   
+R6         EQU      6                                                   
+R7         EQU      7                                                   
+R8         EQU      8                                                   
+R9         EQU      9                                                   
+R10        EQU      10                             @HTCB
+R11        EQU      11                             @WORKAREA            
+R12        EQU      12                                                  
+R13        EQU      13                                                  
+R14        EQU      14                                                  
+R15        EQU      15                                                  
+*********************************************************************** 
+* ENTRY                                                                 
+*********************************************************************** 
+           BAKR     R14,0                          SAVE CALLER REGS
+           LR       R12,R15                  R12:  @THTCREAT
+           USING    THTCREAT,R12                   ADDRESS THTCREAT
+***********************************************************************
+* MAIN
+***********************************************************************
+           USING    THTCOMM,R1                     ADDRESS THTCOMM
+           L        R2,@MAPAREA              R2:   @HTCB
+*----------------------------------------------------------------------
+*          TEST IF HTCB EXISITS
+*----------------------------------------------------------------------
+           LR       R10,R2                   R10:  @HTCB
+           USING    THTHTCB,R10                    ADDRESS HTCB
+           IILF     R15,THTEYE               R15:  'HTCB' EYE CATCHER
+           L        R14,0(,R2)               R14:  EYE CATCHER
+           CRJNE    R15,R14,ERROR01                IF NO HTCB, ERROR
+*----------------------------------------------------------------------
+*          TEST IF WE HAVE A FREE TBCB SLOT
+*----------------------------------------------------------------------
+           L        R6,THTTBLC               R6:   NUMBER CURRENT TBCB
+           L        R7,THTTBLNUM             R7:   MAX. NUMBER TBCB
+           CRJE     R6,R7,ERROR02                  IF MAX THEN ERROR
+*----------------------------------------------------------------------
+*          TEST IF TABLE EXISTS
+*----------------------------------------------------------------------
+           LA       R2,THTHTCBL(,R2)         R2:   @VECTOR OF TBCB's
+           USING    THTTBCB,R2                     ADDRESS TBCB
+*----------------------------------------------------------------------
+*          SEARCH ALL TBCB FOR OUR TABLE
+*----------------------------------------------------------------------
+           LLC      R4,TBLNAMEL              R4:   LENGTH TABLE NAME
+           IILF     R0,THTEYE2               R0:   'TBCB' EYE CATCHER
+           L        R15,@TBLNAME             R15:  @TABLE NAME
+           SR       R3,R3                    R3:   RESET TO ZERO
+           IILF     R8,1                     R8:   TABLE ID
+           SR       R11,R11                  R11:  RESET FOUND_TBCB
+SRCHTABLE  L        R14,0(,R2)               R14:  TBCB EYE CATCHER
+           CIJH     R11,0,SRCHTABLE2               IF TBCB FOUND,SKIP
+           CRJNE    R0,R14,TAKEIT                  IF NO TBCB,WE USE IT
+SRCHTABLE2 LLC      R5,THTTNAML              R5:   TBLNAME LEN OF TBCB
+           CRJNE    R5,R4,NEXTTBCB                 IF NOT SAME LEN,NEXT
+           AHI      R5,-1                    R5:   DECR. LENGTH FOR CLC
+           EX       R5,TBLCLC                      FOUND OUR TBCB ?
+           JE       ERROR03                        YES, ERROR
+NEXTTBCB   LA       R2,THTTBCBL(,R2)               NO, NEXT TBCB
+           AHI      R8,1                           INCR. TABLE ID
+           JCT      R6,SRCHTABLE                   CONTINUE WHILE TBCBs
+           CIJH     R3,0,CREATE                    IF NO FREE SLOT
+           LR       R3,R8                          TAKE NEXT ONE
+           J        CREATE                         CREATE THE TABLE
+TAKEIT     LR       R3,R8                    R1:   SAVE FREE TABLE ID
+           LR       R11,R2                         SAVE ADDR OF TBCB
+           CIJE     R6,0,CREATE                    IF FIRST TABLE
+           LA       R2,THTTBCBL(,R2)         R2:   @NEXT TBCB
+           J        SRCHTABLE
+*----------------------------------------------------------------------
+*          CREATE TABLE CONTROL BLOCK
+*----------------------------------------------------------------------
+CREATE     DS       0H
+           CIJE     R11,0,CREATE2                  IF NO TBCB FOUND
+           LR       R2,R11                   R2:   @FREE_TBCB
+CREATE2    DS       0H
+           ST       R0,THTTBEC                     SET EYE CATCHER
+           ST       R3,THTTID                      SET TABLE ID
+           SR       R7,R7                    R7:   ZERO
+           ST       R7,THTFBUCK                    RESET TABLE CHAIN
+           ST       R7,THTLBUCK                    RESET TABLE CHAIN
+*----------------------------------------------------------------------
+*          CALCULATE AND SET HASH OF TABLENAME
+*----------------------------------------------------------------------
+           L        R15,@THTHASH2            R15:  @THTHASH2
+           BALR     R14,R15                        GO CALC HASH
+           MVC      THTTHASH,TBLHASH               SET HASH IN TBCB
+*----------------------------------------------------------------------
+*          MOVE TABLE NAME INTO TBCB
+*----------------------------------------------------------------------
+           LLC      R7,TBLNAMEL              R7:   LENGTH TABLENAME
+           STC      R7,THTTNAML                    SET LENGTH IN TBCB
+           AHI      R7,-1                          - 1 FOR MVC
+           L        R15,@TBLNAME             R15:  @TBLNAME THTCOMM
+           EX       R7,THTNAMEMVC                  SET TABLENAME TBCB
+           ASI      THTTBLC,1                      INCR. TABLE COUNT
+           SR       R15,R15                  R15:  RC=0
+***********************************************************************
+* RETURN
+***********************************************************************
+EXIT01     DS       0H
+           PR       ,
+***********************************************************************
+* ERRORS
+***********************************************************************
+*----------------------------------------------------------------------
+*          NO HTCB FOUND, HASHTABLE MUST BE  INIT
+*----------------------------------------------------------------------
+ERROR01    DS       0H
+           IILF     R15,#NO_HTCB
+           J        EXIT01
+*----------------------------------------------------------------------
+*          NO FREE TABLE CONTROL BLOCK SLOT
+*----------------------------------------------------------------------
+ERROR02    DS       0H
+           IILF     R15,#NO_FREE_TBCB
+           J        EXIT01
+*----------------------------------------------------------------------
+*          TABLE ALREADY EXISTS
+*----------------------------------------------------------------------
+ERROR03    DS       0H
+           IILF     R15,#TABLE_EXISTS
+           J        EXIT01
+***********************************************************************
+* CONSTANTS
+***********************************************************************
+           DS       0F
+@THTHASH2  DC       V(THTHASH2)
+TBLCLC     CLC      THTTNAME(0),0(R15)
+THTNAMEMVC MVC      THTTNAME(0),0(R15)
+***********************************************************************
+* DSECTS
+***********************************************************************
+           THTCOMM  ,                              THT COMMAREA
+           THTCBLKS ,                              THT CONTROL BLOCKS
+           END      THTCREAT

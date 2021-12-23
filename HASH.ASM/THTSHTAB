@@ -1,0 +1,154 @@
+***********************************************************************
+* Description:                                                        *
+* ________________________________________________________________    *
+* RETURNS ALL TABLE NAMES_________________________________________    *
+* THE POINTER @THTRETURN IN THTCOMM LINKS TO THE RETURN AREA._____    *
+* THE CALLER IS RESPONSIBLE FOR RELEASING THE STORAGE.____________    *
+* ________________________________________________________________    *
+* Entry:___R1: @THTCOMM___________________________________________    *
+* ________________________________________________________________    *
+* Return:__R15: RC________________________________________________    *
+* _________R1:  @THTCOMM__________________________________________    *
+***********************************************************************
+           TITLE    'THTSHTAB GET ALL TABLE  NAMES'
+           SYSSTATE ARCHLVL=2
+THTSHTAB   RSECT    ,                              REANTRANT
+THTSHTAB   AMODE    31
+THTSHTAB   RMODE    ANY
+*********************************************************************** 07930000
+* REGISTER                                                              07940000
+*********************************************************************** 07930000
+R0         EQU      0
+R1         EQU      1                                                   07960000
+R2         EQU      2                                                   07970000
+R3         EQU      3                                                   07980000
+R4         EQU      4                                                   07990000
+R5         EQU      5                                                   08000000
+R6         EQU      6                                                   08010000
+R7         EQU      7                                                   08020000
+R8         EQU      8                                                   08030000
+R9         EQU      9                                                   08040000
+R10        EQU      10                             @THTCOMM
+R11        EQU      11                             @WORKAREA            08050000
+R12        EQU      12                             @THTSHTAB            08060000
+R13        EQU      13                                                  08070000
+R14        EQU      14                                                  08080000
+R15        EQU      15                                                  08090000
+*********************************************************************** 07930000
+* ENTRY                                                                 07940000
+*********************************************************************** 07930000
+           BAKR     R14,0                          SAVE CALLER REGS
+           LR       R12,R15                  R12:  @THTSHTAB
+           USING    THTSHTAB,R12                   ADDRESS THTSHTAB
+           LR       R10,R1                   R10:  @THTCOMM
+***********************************************************************
+* MAIN
+***********************************************************************
+           USING    THTCOMM,R10                    ADDRESS THTCOMM
+           L        R2,@MAPAREA              R2:   @HTCB
+*----------------------------------------------------------------------
+*          TEST IF HTCB EXISITS
+*----------------------------------------------------------------------
+           USING    THTHTCB,R2                     ADDRESS HTCB
+           IILF     R15,THTEYE               R15:  'HTCB' EYE CATCHER
+           L        R14,0(,R2)               R14:  EYE CATCHER
+           CRJNE    R15,R14,ERROR01                IF NO HTCB, ERROR
+*----------------------------------------------------------------------
+*          TEST IF WE HAVE ANY TABLES
+*----------------------------------------------------------------------
+           L        R6,THTTBLC               R6:   NUMBER CURRENT TBCB
+           CIJE     R6,0,ERROR02                   IF = 0 THEN ERROR
+           DROP     R2                             DROP HTCB
+           LA       R4,THTHTCBL(,R2)         R4:   @VECTOR OF TBCB's
+*----------------------------------------------------------------------
+*          INITIALIZE ARRAY FOR TABLES
+*----------------------------------------------------------------------
+           LR       R1,R6
+           SLLG     R14,R1,32
+           MHI      R1,#ARRAYELL
+           AHI      R1,#ARRAYL
+           SR       R2,R2                    R2:   ZERO
+           TM       THTRTYP,THTOBJECT              RETURN OBJECT?
+           JZ       INITARRAY                      NO, GET STOR ARRAY
+*--------------------------------------------
+*          ADD SPACE FOR TABLE NAMES
+*                   IN OBJECT
+*--------------------------------------------
+           SLLG     R15,R1,32                R15H: SIZE ARRAY
+           LR       R5,R6                    R2:   NUMBER TABLES
+           MHI      R5,THTTNAMEL                   * MAX LENGTH TBLN.
+           ALR      R1,R5                          ADD TO ARRAY SIZE
+           SRLG     R2,R15,32                R2:   SIZE ARRAY
+INITARRAY  DS       0H
+           STORAGE  OBTAIN,LOC=31,LENGTH=(R1)      GET STOR FOR ARRAY
+           LR       R7,R1                    R7:   @ARRAY
+           USING    #ARRAY,R1                      ADDRESS ARAY
+           ST       R0,#ARRAYSIZ                   SET SIZE ARRAY
+           XC       #ARRAYELM,#ARRAYELM            RESET COUNT ELEMS
+           SRLG     R14,R14,32               R14:  MAX ELEMS
+           ST       R14,#ARRAYELMM                 SET IN ARRAY
+           DROP     R1                             DROP ARRAY
+           USING    #ARRAY,R7                      ADDRESS ARRAY
+           ST       R6,#ARRAYELM                   SET NUMBER ELEMENTS
+           DROP     R7                             DROP ARRAY
+           ST       R7,@THTRETURN                  SET PTR IN THTCOMM
+           LA       R2,0(R2,R7)              R2:   @AFTER ARRAY
+           LA       R7,#ARRAYL(,R7)          R7:   @FIRST ARRAY ELEMENT
+           USING    #ARRAYEL,R7                    ADDRESS ELEMENT
+*----------------------------------------------------------------------
+*          SEARCH ALL TBCB FOR OUR TABLES
+*----------------------------------------------------------------------
+           USING    THTTBCB,R4                     ADDRESS TBCB
+           IILF     R0,THTEYE2               R0:   'TBCB' EYE CATCHER
+           SR       R3,R3                    R3:   RESET TO ZERO
+SRCHTABLE  L        R14,0(,R4)               R14:  TBCB EYE CATCHER
+           CRJNE    R0,R14,NEXTTBCB                IF NO TBCB, GET NEXT
+           LLC      R3,THTTNAML              R3:   LENGTH TABLE NAME
+           ST       R3,#ARRAYELML                  SET LENGTH ELEMENT
+           LA       R8,THTTNAME              R8:   @TABLE_NAME
+           TM       THTRTYP,THTOBJECT              RETURN TYPE OBJECT?
+           JZ       SETPTR                         NO, GO ON
+           LR       R5,R2                    R5:   @OBJ TABLENAME
+           LR       R9,R3                    R9:   LENGTH TABLENAME
+           MVCL     R2,R8                          TBLNAME AFTER ARRAY
+           LR       R8,R5                    R5:   @OBJ TABLENAME
+SETPTR     ST       R8,#ARRAYELM@                  SET PTR IN THTCOMM
+           LA       R7,#ARRAYELL(,R7)        R7:   @NEXT_ELEMENT
+           LA       R4,THTTBCBL(,R4)               NEXT TBCB SLOT
+           JCT      R6,SRCHTABLE                   CONTINUE WHILE TBCBs
+           J        RETURN
+NEXTTBCB   LA       R4,THTTBCBL(,R4)               NO, NEXT TBCB SLOT
+           J        SRCHTABLE
+RETURN     SR       R15,R15
+***********************************************************************
+* RETURN
+***********************************************************************
+EXIT01     DS       0H
+           LR       R1,R10                   R1:   @THTCOMM
+           PR       ,
+***********************************************************************
+* ERRORS
+***********************************************************************
+*----------------------------------------------------------------------
+*          NO HTCB FOUND, HASHTABLE MUST BE  INIT
+*----------------------------------------------------------------------
+ERROR01    DS       0H
+           IILF     R15,#NO_HTCB
+           J        EXIT01
+*----------------------------------------------------------------------
+*          NO TABLES
+*----------------------------------------------------------------------
+ERROR02    DS       0H
+           IILF     R15,#NO_TABLES
+           J        EXIT01
+***********************************************************************
+* CONSTANTS
+***********************************************************************
+           LTORG
+***********************************************************************
+* DSECTS
+***********************************************************************
+           DATATYPE ,                              DATATYPES MAPPING
+           THTCOMM  ,                              THT COMMAREA
+           THTCBLKS ,                              THT CONTROL BLOCKS
+           END      THTSHTAB

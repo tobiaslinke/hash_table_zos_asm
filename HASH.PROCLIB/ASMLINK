@@ -1,0 +1,29 @@
+//* Assemble                                                            00010000
+//ASMLINK PROC                                                          00011000
+//*--------------------------------------------------------------       00012004
+//* ASSEMBLE                                                            00013004
+//*--------------------------------------------------------------       00014004
+//ASM     EXEC PGM=ASMA90,PARM=                                         00020004
+//SYSLIB   DD  DISP=SHR,DSN=SYS1.MACLIB                                 00040000
+//         DD  DISP=SHR,DSN=SYS1.MODGEN                                 00050000
+//         DD  DISP=SHR,DSN=GKI0794.TAF.MACLIB                          00060000
+//         DD  DISP=SHR,DSN=GKI0794.HASH.MACLIB                         00061000
+//SYSUT1   DD  UNIT=VIO,SPACE=(CYL,(5,5))                               00070000
+//SYSUT2   DD  UNIT=VIO,SPACE=(CYL,(5,5))                               00080000
+//SYSUT3   DD  UNIT=VIO,SPACE=(CYL,(5,5))                               00090000
+//SYSLIN   DD  DISP=SHR,DSN=OBJECT.CODE.LIB.NAME(PROGNAME)              00100001
+//SYSPRINT DD  SYSOUT=*                                                 00110005
+//SYSIN    DD  DISP=SHR,DSN=ASM.SOURCE.LIB.NAME(PROGNAME)               00120001
+//*--------------------------------------------------------------       00121004
+//* LINK                                                                00140004
+//*--------------------------------------------------------------       00141004
+//LINK    EXEC PGM=IEWL,PARM=                                           00150004
+//SYSPRINT DD  SYSOUT=*                                                 00180000
+//SYSUT1   DD  UNIT=VIO,SPACE=(1024,(20,20))                            00190000
+//SYSUT2   DD  UNIT=VIO,SPACE=(1024,(20,20))                            00200000
+//SYSUT3   DD  UNIT=VIO,SPACE=(1024,(20,20))                            00210000
+//SYSLIB   DD  DISP=SHR,DSN=SYS1.CSSLIB                                 00220000
+//SYSLMOD  DD  DISP=SHR,DSN=LOADLIB.NAME                                00240001
+//SYSLIN   DD  DISP=SHR,DSN=OBJECT.CODE.LIB.NAME                        00241006
+//         DD  DDNAME=SYSIN                                             00250006
+//*                                                                     00310000

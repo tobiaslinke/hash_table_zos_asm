@@ -1,0 +1,220 @@
+***********************************************************************
+* Description:                                                        *
+* ________________________________________________________________    *
+* THTSELES RETURNS ALL KEYS+VALUES OF A TABLE_____________________    *
+* @THTRETURN IN THTCOMM IS THE POINTER TO THE RETURN AREA_________
+* THE CALLER IS RESPONSIBLE FOR RELEASING THE STORAGE_____________    *
+* ________________________________________________________________    *
+* Entry:___R1: @THTCOMM___________________________________________    *
+* ________________________________________________________________    *
+* Return:__R15: RC________________________________________________    *
+* _________R1:  @THTCOMM__________________________________________    *
+***********************************************************************
+           TITLE    'THTSELES SELECT ALL RECORDS FROM A TABLE'
+           SYSSTATE ARCHLVL=2
+THTSELES   RSECT    ,                              REANTRANT
+THTSELES   AMODE    31
+THTSELES   RMODE    ANY
+*********************************************************************** 
+* REGISTER                                                              
+*********************************************************************** 
+R0         EQU      0
+R1         EQU      1                              @THTCOMM             
+R2         EQU      2                              @TBCB                
+R3         EQU      3                              @BUCKET              
+R4         EQU      4                              BUCKET INDEX         
+R5         EQU      5                              BUCKET OFFSET        
+R6         EQU      6                                                   
+R7         EQU      7                                                   
+R8         EQU      8                                                   
+R9         EQU      9                                                   
+R10        EQU      10                             @HTCB
+R11        EQU      11                             @WORKAREA            
+R12        EQU      12                             @THTSELES            
+R13        EQU      13                                                  
+R14        EQU      14                             @BEGIN BUCKETAREA    
+R15        EQU      15                             @END BUCKET AREA     
+*********************************************************************** 
+* ENTRY                                                                 
+*********************************************************************** 
+           BAKR     R14,0
+           LR       R12,R15                  R12:  @THTSELES
+           USING    THTSELES,R12                   ADDRESS THTSELES
+           LR       R13,R1                   R13:  @THTCOMM
+***********************************************************************
+* MAIN
+***********************************************************************
+           USING    THTCOMM,R13                    ADDRESS THTCOMM
+           L        R2,@MAPAREA              R2:   @HTCB
+*----------------------------------------------------------------------
+*          TEST IF HTCB EXISITS
+*----------------------------------------------------------------------
+           LR       R10,R2                   R10:  @HTCB
+           USING    THTHTCB,R10                    ADDRESS HTCB
+           IILF     R15,THTEYE               R15:  'HTCB' EYE CATCHER
+           L        R14,0(,R2)               R14:  EYE CATCHER
+           CRJNE    R15,R14,ERROR01                IF NO HTCB, ERROR
+*----------------------------------------------------------------------
+*          TEST IF TABLE EXISTS
+*----------------------------------------------------------------------
+           LA       R2,THTHTCBL(,R2)         R2:   @VECTOR OF TBCB's
+           USING    THTTBCB,R2                     ADDRESS TBCB
+           ICM      R9,B'1111',THTTBLC       R9:   NUMBER OF TABLES
+           JZ       ERROR02                        IF NO TBCB's, ERROR
+*----------------------------------------------------------------------
+*          SEARCH ALL TBCB FOR OUR TABLE
+*----------------------------------------------------------------------
+           LLC      R4,TBLNAMEL              R4:   LENGTH TABLE NAME
+           IILF     R0,THTEYE2               R0:   'TBCB' EYE CATCHER
+           L        R15,@TBLNAME             R15:  @TABLE NAME
+SRCHTABLE  L        R14,0(,R2)               R14:  TBCB EYE CATCHER
+           CRJNE    R0,R14,NEXTSLOT                IF NO TBCB,NEXT SLOT
+           LLC      R5,THTTNAML              R5:   TBLNAME LEN OF TBCB
+           CRJNE    R5,R4,NEXTTBCB                 IF NOT SAME LEN,NEXT
+           AHI      R5,-1                    R5:   DECR. LENGTH FOR CLC
+           EX       R5,TBLCLC                      FOUND OUR TBCB ?
+           JE       SELECTALL                      YES, CONTINUE
+NEXTTBCB   LA       R2,THTTBCBL(,R2)               NO, NEXT TBCB
+           JCT      R9,SRCHTABLE                   CONTINUE WHILE TBCBs
+           J        ERROR03                        TABLE NOT FOUND
+NEXTSLOT   LA       R2,THTTBCBL(,R2)         R2:   @NEXT TBCB
+           J        SRCHTABLE
+*----------------------------------------------------------------------
+*          SELECT ALL KEYS + VALUES FROM TABLE
+*----------------------------------------------------------------------
+SELECTALL  DS       0H
+*----------------------------------------------------------------------
+*          TEST IF WE HAVE USED BUCKETS IN THE TABLE
+*----------------------------------------------------------------------
+           L        R5,THTTNBUC              R0:   NUM BUCKETS IN TBL
+           CIJE     R5,0,ERROR04                   IF 0 THEN ERROR
+           L        R3,THTFBUCK              R3:   RBA FIRST_BUCKET
+           LA       R3,0(R3,R10)             R3:   @FIRST_BUCKET
+           USING    THTBUCK,R3                     ADDRESS FIRST_BUCKET
+*----------------------------------------------------------------------
+*          GET AN ARRAY FOR KEYS AND VALUES
+*----------------------------------------------------------------------
+           LR       R6,R5                    R6:   NUM BUCKETS IN TBL
+           RISBG    R6,R5,64,X'00'+31,32     R6H:  SAVE NUMBER BUCKETS
+           SLL      R6,1                           * 2
+           LR       R1,R6
+           SLLG     R14,R1,32
+           MHI      R1,#ARRAYELL
+           AHI      R1,#ARRAYL
+           SR       R2,R2
+           TM       THTRTYP,THTOBJECT              RETURN OBJECT?
+           JZ       INITARRAY                      NO, GET STOR ARRAY
+*--------------------------------------------
+*          ADD ALL LENGTHS FOR KEY & VALUE
+*          FOR ALL  BUCKETS IN TABLE
+*--------------------------------------------
+           SLLG     R15,R1,32                R15H: SIZE ARRAY
+           RISBG    R3,R3,64,X'00'+31,32     R3H:  SAVE @BUCKET
+           RISBG    R6,R6,32,X'00'+0,32      R6:   RESTORE NUM BUCKETS
+ALLBUCKET0 LLC      R0,THTKEYL               R0:   LENGTH KEY
+           ALR      R1,R0                          + LENGTH KEY
+           A        R1,THTVALL                     + LENGTH VALUE
+           L        R3,THTBUCKN              R3:   RBA OF NEXT IN CHAIN
+           LA       R3,0(R3,R10)             R3:   @NEXT_BUCKET
+           JCT      R6,ALLBUCKET0                  GET THEM ALL
+           SRLG     R2,R15,32                R2:   SIZE ARRAY
+           RISBG    R3,R3,32,X'00'+0,32      R3:   RESTORE @BUCKET
+           SRLG     R2,R15,32                R2:   SIZE ARRAY
+*--------------------------------------------
+*          ADD SPACE FOR KEY+VALUES
+*                   IN OBJECT
+*--------------------------------------------
+INITARRAY  DS       0H
+           STORAGE  OBTAIN,LOC=(31,31),LENGTH=(R1),BNDRY=DBLWD
+           LR       R7,R1                    R7:   @ARRAY
+           ST       R7,@THTRETURN                  SET PTR IN THTCOMM
+           USING    #ARRAY,R7                      ADDRESS ARAY
+           ST       R0,#ARRAYSIZ                   SET SIZE ARRAY
+           XC       #ARRAYELM,#ARRAYELM            RESET COUNT ELEMS
+           SRLG     R14,R14,32               R14:  MAX ELEMS
+           ST       R14,#ARRAYELMM                 SET IN ARRAY
+           ST       R14,#ARRAYELM                  SET NUM ELEMENTS
+           DROP     R7                             DROP ARRAY
+           LA       R0,0(R2,R7)              R0:   @AFTER ARRAY
+           LA       R7,#ARRAYL(,R7)          R7:   @INDEX 0
+           USING    #ARRAYEL,R7                    ADDRESS ELEMENT
+*--------------------------------------------
+*          GET ALL POINTER,LENGTHS FOR
+*          FOR ALL  KEYS AND VALUES
+*--------------------------------------------
+ALLBUCKETS DS       0H
+           LLC      R2,THTKEYL               R2:   LENGTH KEY
+           LA       R8,THTBUCKL(,R3)         R8:   @KEY
+           ST       R2,#ARRAYELML                  SET LENGth IN ARRAY
+           TM       THTRTYP,THTOBJECT              RETURN TYPE OBJECT?
+           JZ       SETPTR1                        NO, GO ON
+           LR       R6,R0                    R6:   @OBJ KEY
+           LR       R9,R2                    R9:   LENGTH KEY
+           LR       R1,R2                    R1:   LENGTH KEY
+           LR       R11,R8                   R11:  SAVE @KEY
+           MVCL     R0,R8                          KEY AFTER ARRAY
+           ST       R6,#ARRAYELM@            R8:   @OBJ KEY
+           LR       R8,R11                   R8:   RESTORE @KEY
+           J        NEXT01
+SETPTR1    ST       R8,#ARRAYELM@                  SET PTR IN ARRAY
+NEXT01     LA       R7,#ARRAYELL(,R7)        R7:   @NEXT_ELEMENT
+           LA       R8,0(R2,R8)              R8:   @VALUE
+           L        R9,THTVALL               R9:   LENGTH VALUE
+           ST       R9,#ARRAYELML                  SET IN ARRAY
+           TM       THTRTYP,THTOBJECT              RETURN TYPE OBJECT?
+           JZ       SETPTR2                        NO, GO ON
+           LR       R6,R0                    R6:   @OBJ KEY
+           LR       R1,R9                    R1:   LENGTH VALUE
+           MVCL     R0,R8                          VALUE AFTER ARRAY
+           LR       R8,R6                    R8:   @OBJ VALUE
+SETPTR2    ST       R8,#ARRAYELM@                  SET PTR IN ARRAY
+           L        R3,THTBUCKN              R3:   RBA OF NEXT IN CHAIN
+           LA       R3,0(R3,R10)             R3:   @NEXT_BUCKET
+           LA       R7,#ARRAYELL(,R7)        R7:   @NEXT_ELEMENT
+           JCT      R5,ALLBUCKETS                  GET THEM ALL
+           SR       R15,R15                  R15:  RC=0
+***********************************************************************
+* RETURN
+***********************************************************************
+EXIT01     DS       0H
+           LR       R1,R13                   R1:   @THTCOMM
+           PR       ,                              RETURN TO CALLER
+***********************************************************************
+* ERRORS
+***********************************************************************
+*----------------------------------------------------------------------
+*          NO HTCB FOUND, HASHTABLE MUST BE  INIT
+*----------------------------------------------------------------------
+ERROR01    DS       0H
+           IILF     R15,#NO_HTCB
+           J        EXIT01
+*----------------------------------------------------------------------
+*          NO TABLES FOUND
+*----------------------------------------------------------------------
+ERROR02    DS       0H
+           IILF     R15,#NO_TABLES
+           J        EXIT01
+*----------------------------------------------------------------------
+*          TABLE NOT FOUND
+*----------------------------------------------------------------------
+ERROR03    DS       0H
+           IILF     R15,#TABLE_NOT_FOUND
+           J        EXIT01
+*----------------------------------------------------------------------
+*          TABLE IS EMPTY
+*----------------------------------------------------------------------
+ERROR04    DS       0H
+           IILF     R15,#TABLE_IS_EMPTY
+           J        EXIT01
+***********************************************************************
+* CONSTANTS
+***********************************************************************
+TBLCLC     CLC      THTTNAME(0),0(R15)
+           LTORG
+***********************************************************************
+* DSECTS
+***********************************************************************
+           DATATYPE ,                              DATATYPES MAPPING
+           THTCOMM  ,                              THT COMMAREA
+           THTCBLKS ,                              THT CONTROL BLOCKS
+           END      THTSELES

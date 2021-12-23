@@ -1,0 +1,115 @@
+***********************************************************************
+* Description:                                                        *
+* ________________________________________________________________    *
+* RETURNS STATISTICAL INFORMATIONS FROM THE ______________________    *
+* HASHTABLE CONTROL BLOCK.________________________________________
+* ________________________________________________________________    *
+* Entry:___R1: @THTCOMM___________________________________________    *
+* ________________________________________________________________    *
+* Return:__R15: RC________________________________________________    *
+* _________R1:  @THTCOMM__________________________________________    *
+***********************************************************************
+           TITLE    'THTSHSTA GET STATISTICS INFORMATION'
+           SYSSTATE ARCHLVL=2
+THTSHSTA   RSECT    ,                              REANTRANT
+THTSHSTA   AMODE    31
+THTSHSTA   RMODE    ANY
+*********************************************************************** 
+* REGISTER                                                              
+*********************************************************************** 
+R0         EQU      0
+R1         EQU      1                                                   
+R2         EQU      2                                                   
+R3         EQU      3                                                   
+R4         EQU      4                              @THTCOMM             
+R5         EQU      5                                                   
+R6         EQU      6                                                   
+R7         EQU      7                                                   
+R8         EQU      8                                                   
+R9         EQU      9                                                   
+R10        EQU      10                             @HTCB
+R11        EQU      11                             @WORKAREA            
+R12        EQU      12                             @THTSHSTA            
+R13        EQU      13                                                  
+R14        EQU      14                                                  
+R15        EQU      15                                                  
+*********************************************************************** 
+* ENTRY                                                                 
+*********************************************************************** 
+           BAKR     R14,0                          SAVE CALLER REGS
+           LR       R12,R15                  R12:  @THTSHSTA
+           USING    THTSHSTA,R12                   ADDRESS THTSHSTA
+***********************************************************************
+* MAIN
+***********************************************************************
+           LR       R4,R1                    R4:   @THTCOMM
+           USING    THTCOMM,R4                     ADDRESS THTCOMM
+           L        R10,@MAPAREA             R10:  @HTCB
+*----------------------------------------------------------------------
+*          TEST IF HTCB EXISITS
+*----------------------------------------------------------------------
+           USING    THTHTCB,R10                    ADDRESS HTCB
+           IILF     R15,THTEYE               R15:  'HTCB' EYE CATCHER
+           L        R14,0(,R10)              R14:  EYE CATCHER
+           CRJNE    R15,R14,ERROR01                IF NO HTCB, ERROR
+*----------------------------------------------------------------------
+*          OVERLAY THTCOMM WITH THTSHSTAR
+*----------------------------------------------------------------------
+           USING    THTSHSTAR,R4                   ADRESS RETURN AREA
+*----------------------------------------------------------------------
+*          GET INFORMATIONS OUT OF HTCB
+*----------------------------------------------------------------------
+           L        R7,THTBUCKC              R7:   NUMBER OF BUCKETS
+           L        R8,THTBUCKU              R8:   NUMBER USED BUCKETS
+           L        R5,THTBUCKF              R5:   NUMBER FREE BUCKETS
+           L        R6,THTTBLNUM             R6:   NUMBER OF TABLES
+           L        R3,THTCOLLS              R3:   NUMBER COLLISIONS
+           L        R0,THTVSIZE              R0:   SIZE KEY/VALUE FIELD
+           L        R9,THTBSIZE              R9:   SIZE OF BUCKETS
+           L        R2,THTTBLC               R2:   NUMBER USED TABLES
+           ST       R6,THTSHSTA_TBL                SET IN RETURN AREA
+           SLR      R6,R2                    R6:   FREE TABLES
+           ST       R6,THTSHSTA_TBF                SET IN RETURN AREA
+           ST       R2,THTSHSTA_TBU                SET IN RETURN AREA
+           ST       R7,THTSHSTA_BUC                SET IN RETURN AREA
+           ST       R8,THTSHSTA_USE                SET IN RETURN AREA
+           ST       R5,THTSHSTA_FRE                SET IN RETURN AREA
+           ST       R3,THTSHSTA_COL                SET IN RETURN AREA
+           ST       R9,THTSHSTA_SBU                SET IN RETURN AREA
+           ST       R0,THTSHSTA_SVA                SET IN RETURN AREA
+*----------------------------------------------------------------------
+*          CALCULATE LOAD FACTOR
+*          LOAD FACTOR=USED_BUCKETS*100/NUMBER_BUCKETS
+*----------------------------------------------------------------------
+           L        R7,THTSHSTA_USE          R7:   NUMBER USED_BUCKETS
+           L        R8,THTSHSTA_BUC          R7:   NUMBER OF BUCKETS
+           SR       R6,R6                    R6:   RESET
+           MHI      R7,100                   R7:   LOAD FACTOR
+           DLR      R6,R8                    R7:   USED BUCKETS/BUCKETS
+           ST       R7,THTSHSTA_LOD                SAVE LOAD FACTOR
+           SR       R15,R15                  R15:  RC=0
+***********************************************************************
+* RETURN
+***********************************************************************
+EXIT01     DS       0H
+           LR       R1,R4                    R1:   @THTCOMM
+           PR       ,
+***********************************************************************
+* ERRORS
+***********************************************************************
+*----------------------------------------------------------------------
+*          NO HTCB FOUND, HASHTABLE MUST BE  INIT
+*----------------------------------------------------------------------
+ERROR01    DS       0H
+           IILF     R15,#NO_HTCB
+           J        EXIT01
+***********************************************************************
+* CONSTANTS
+***********************************************************************
+           LTORG
+***********************************************************************
+* DSECTS
+***********************************************************************
+           THTCOMM  ,                              THT COMMAREA
+           THTCBLKS ,                              THT CONTROL BLOCKS
+           END      THTSHSTA
