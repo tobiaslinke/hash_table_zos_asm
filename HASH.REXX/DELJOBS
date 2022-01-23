@@ -6,7 +6,6 @@ if JobName2Status<>0 then exit 4
 if OUTPUT.0 <= 0 then exit 4
 call Cancel#Purge#Job
 exit 0
-/************** Funktionen und Subroutinen ***************************/
 
 getJobStatus: procedure expose OUTPUT.
 parse arg jobName .
