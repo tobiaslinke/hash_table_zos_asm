@@ -1,4 +1,4 @@
-//IBMUSERP JOB 90000000,LINKE,CLASS=A,MSGLEVEL=(1,1),
+//USERP JOB 90000000,LINKE,CLASS=A,MSGLEVEL=(1,1),
 // MSGCLASS=Q,NOTIFY=&SYSUID
 //*MAIN SYSTEM=T392
 //**********************************************************************
@@ -19,16 +19,16 @@
 //             SET MOD18=THTHASH3
 //             SET MOD19=THTCOMIT
 //*---------------------------------------------------------------------
-//             SET PREFIX=GKI0794.HASH
-//             SET LOADLIB=GKI0794.LSF.LOADLIB
-//             SET PROCLIB=GKI0794.LSF.PROCLIB
+//             SET PREFIX=USER.HASH
+//             SET LOADLIB=USER.LSF.LOADLIB
+//             SET PROCLIB=USER.LSF.PROCLIB
 //             JCLLIB ORDER=&PROCLIB
 //**********************************************************************
 //*--------------------------------------------------------
 //* DELETE OLD OUTPUT
 //*--------------------------------------------------------
 //DELJOBS      EXEC PGM=IKJEFT01,PARM='DELJOBS3'
-//SYSEXEC      DD DSN=GKI0794.HASH.REXX,DISP=SHR
+//SYSEXEC      DD DSN=USER.HASH.REXX,DISP=SHR
 //SYSTSPRT     DD SYSOUT=*
 //SYSTSIN      DD DUMMY
 //*--------------------------------------------------------

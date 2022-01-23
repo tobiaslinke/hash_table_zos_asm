@@ -1,13 +1,13 @@
-//IBMUSERA JOB 90000000,LINKE,CLASS=A,MSGLEVEL=(1,1),
+//USERA JOB 90000000,USER,CLASS=A,MSGLEVEL=(1,1),
 // MSGCLASS=Q,NOTIFY=&SYSUID
 //*--------------------------------------------------------
 //* TEST MODULES
 //*--------------------------------------------------------
 //             SET MOD01=THTBATCH
 //*--------------------------------------------------------
-//             SET PREFIX=GKI0794.HASH
-//             SET LOADLIB=GKI0794.HASH.LOAD
-//             SET PROCLIB=GKI0794.HASH.PROCLIB
+//             SET PREFIX=USER.HASH
+//             SET LOADLIB=USER.HASH.LOAD
+//             SET PROCLIB=USER.HASH.PROCLIB
 //             JCLLIB ORDER=&PROCLIB
 //*--------------------------------------------------------
 //ASMLINK1     EXEC ASMLINK,
